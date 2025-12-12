@@ -1,6 +1,7 @@
 """
 Renderer - All rendering via QPainter
 Uses caching for static elements and draw-by-code for sprites
+FIXED: render_menu now accepts has_save parameter
 """
 from PySide6.QtGui import QPainter, QColor, QLinearGradient, QBrush, QPen, QPixmap, QFont
 from PySide6.QtCore import QRect, QRectF, Qt, QSize
@@ -20,6 +21,7 @@ class Renderer:
         self.title_font = QFont("Sans Serif", 48, QFont.Weight.Bold)
         self.menu_font = QFont("Sans Serif", 24)
         self.ui_font = QFont("Sans Serif", 18)
+        self.small_font = QFont("Sans Serif", 16)
         
         self._generate_background_cache()
         
@@ -65,8 +67,8 @@ class Renderer:
         painter.drawPixmap(-offset, 0, self.bg_cache)
         painter.drawPixmap(self.size.width() - offset, 0, self.bg_cache)
         
-    def render_menu(self, painter: QPainter, size: QSize):
-        """Render main menu screen."""
+    def render_menu(self, painter: QPainter, size: QSize, has_save: bool = False):
+        """Render main menu screen with save/load option."""
         # Background
         gradient = QLinearGradient(0, 0, 0, size.height())
         gradient.setColorAt(0.0, QColor(40, 40, 80))
@@ -88,17 +90,32 @@ class Renderer:
         # Instructions
         painter.setFont(self.ui_font)
         instructions = [
-            "Press SPACE to Start",
-            "",
+            "Press SPACE to Start New Game",
+        ]
+        
+        # Add Load option if save exists
+        if has_save:
+            instructions.append("Press L to Load Saved Game")
+            instructions.append("")
+        else:
+            instructions.append("")
+        
+        instructions.extend([
             "Controls:",
             "Arrow Keys / A-D: Move",
             "Space: Jump (double jump available)",
             "P: Pause",
             "ESC: Menu"
-        ]
+        ])
         
-        y = size.height() // 2 + 50
-        for line in instructions:
+        y = size.height() // 2 + 30
+        for i, line in enumerate(instructions):
+            if i == 1 and has_save:
+                # Highlight Load option in green
+                painter.setPen(QColor(100, 255, 100))
+            else:
+                painter.setPen(QColor(200, 200, 200))
+                
             text_rect = QRect(0, y, size.width(), 30)
             painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, line)
             y += 35
@@ -118,6 +135,9 @@ class Renderer:
         hint_rect = QRect(0, size.height() // 2 + 50, size.width(), 30)
         painter.drawText(hint_rect, Qt.AlignmentFlag.AlignCenter, "Press P to Resume")
         
+        hint_rect2 = QRect(0, size.height() // 2 + 85, size.width(), 30)
+        painter.drawText(hint_rect2, Qt.AlignmentFlag.AlignCenter, "Press ESC to Menu (Auto-Save)")
+        
     def render_game_over(self, painter: QPainter, size: QSize, score: int):
         """Render game over screen."""
         # Dark overlay
@@ -134,11 +154,6 @@ class Renderer:
         painter.setFont(self.menu_font)
         score_rect = QRect(0, size.height() // 2, size.width(), 50)
         painter.drawText(score_rect, Qt.AlignmentFlag.AlignCenter, f"Score: {score}")
-        
-        # Restart hint
-        painter.setFont(self.ui_font)
-        hint_rect = QRect(0, size.height() // 2 + 80, size.width(), 30)
-        painter.drawText(hint_rect, Qt.AlignmentFlag.AlignCenter, "Press SPACE to Restart")
         
     def render_level_complete(self, painter: QPainter, size: QSize, score: int):
         """Render level complete screen."""
