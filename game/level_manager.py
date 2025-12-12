@@ -1,5 +1,7 @@
 """
 Level Manager - Load levels, spawn entities, coordinate rendering
+Updated with Power-Up and Flying Enemy support
+FIXED: Finish flag detection bug
 """
 from pathlib import Path
 from typing import List, Optional
@@ -7,8 +9,9 @@ from PySide6.QtGui import QPainter
 
 from game.tilemap import TileMap
 from game.player import Player
-from game.enemy import Enemy
+from game.enemy import Enemy, FlyingEnemy
 from game.coin import Coin, Spike, Finish
+from game.powerup import PowerUp, PowerUpType
 
 
 class LevelManager:
@@ -21,6 +24,7 @@ class LevelManager:
         self.enemies: List[Enemy] = []
         self.coins: List[Coin] = []
         self.spikes: List[Spike] = []
+        self.powerups: List[PowerUp] = []
         self.finish: Optional[Finish] = None
         
     def load_level(self, level_name: str):
@@ -29,6 +33,7 @@ class LevelManager:
         self.enemies.clear()
         self.coins.clear()
         self.spikes.clear()
+        self.powerups.clear()
         self.finish = None
         
         # Load level file
@@ -36,6 +41,7 @@ class LevelManager:
         
         # Fallback to default level if file not found
         if not level_path.exists():
+            print(f"⚠️  Level file not found: {level_path}, using default level")
             map_data = self._get_default_level()
         else:
             with open(level_path, 'r') as f:
@@ -47,6 +53,12 @@ class LevelManager:
         
         # Spawn entities from tilemap
         self._spawn_entities()
+        
+        print(f"✓ Level loaded: {level_name}")
+        print(f"  - Enemies: {len(self.enemies)}")
+        print(f"  - Coins: {len(self.coins)}")
+        print(f"  - Power-ups: {len(self.powerups)}")
+        print(f"  - Finish flag: {'YES' if self.finish else 'NO'}")
         
     def _spawn_entities(self):
         """Spawn entities based on tilemap markers."""
@@ -64,18 +76,44 @@ class LevelManager:
                 if tile == 'P':
                     # Player spawn
                     self.player = Player(x, y)
+                    
                 elif tile == 'E':
-                    # Enemy spawn
+                    # Ground enemy spawn
                     self.enemies.append(Enemy(x, y))
+                    
                 elif tile == 'C':
                     # Coin spawn
                     self.coins.append(Coin(x, y))
+                    
                 elif tile == '^':
                     # Spike spawn
                     self.spikes.append(Spike(x, y))
-                elif tile == 'F':
-                    # Finish flag
+                    
+                elif tile == 'G':
+                    # Finish flag (G = Goal)
                     self.finish = Finish(x, y)
+                    print(f"  - Finish spawned at ({x}, {y})")
+                    
+                elif tile == 'F':
+                    # Flying enemy (BUKAN finish flag)
+                    self.enemies.append(FlyingEnemy(x, y))
+                    
+                # Power-up spawns
+                elif tile == 'S':
+                    # Speed power-up
+                    self.powerups.append(PowerUp(x, y, PowerUpType.SPEED))
+                    
+                elif tile == 'H':
+                    # Health power-up
+                    self.powerups.append(PowerUp(x, y, PowerUpType.HEALTH))
+                    
+                elif tile == 'J':
+                    # Triple Jump power-up
+                    self.powerups.append(PowerUp(x, y, PowerUpType.TRIPLE_JUMP))
+                    
+                elif tile == 'D':
+                    # Shield power-up
+                    self.powerups.append(PowerUp(x, y, PowerUpType.SHIELD))
                     
     def render(self, painter: QPainter, camera_x: float, camera_y: float):
         """Render all level elements."""
@@ -92,6 +130,10 @@ class LevelManager:
         # Render coins
         for coin in self.coins:
             coin.render(painter, camera_x, camera_y)
+            
+        # Render power-ups
+        for powerup in self.powerups:
+            powerup.render(painter, camera_x, camera_y)
             
         # Render enemies
         for enemy in self.enemies:
@@ -110,15 +152,14 @@ class LevelManager:
         return """
 .........................................
 .........................................
-.........................................
-.........................................
-......C.....C.....C......................
-.....###...###...###.....................
-P...............................E........
-########............#####################
+........S.......H.......J................
+.......###.....###.....###...............
+P.........E.............................D
+########....################.........####
 ........C...C...C........................
-....#################..........^.........
-................................##########
-..........................C.............F
+....#################....................
+................................^........
+##############################...........
+..........................C.............G
 ##############################.###########
 """
