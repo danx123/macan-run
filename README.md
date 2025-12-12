@@ -110,7 +110,7 @@ Levels are defined using ASCII art in `.txt` files within the `levels/` folder.
 | `C` | Coin (collectible) |
 | `E` | Enemy spawn |
 | `P` | Player spawn point |
-| `F` | Flaying Enemy |
+| `F` | Flying Enemy |
 | 'G` | Goal/Finish |
 | 'H` | Health |
 | 'J` | Jump |
