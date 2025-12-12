@@ -1,87 +1,74 @@
 """
-HUD - Heads-Up Display for game stats
-Shows score, coins, health, and distance
+HUD - Heads Up Display
+Displays score, health, coins, and current level
 """
-from PySide6.QtGui import QPainter, QColor, QBrush, QPen, QFont, QPolygonF
-from PySide6.QtCore import QRect, Qt, QPointF
-
+from PySide6.QtGui import QPainter, QColor, QFont, QPen, QBrush
+from PySide6.QtCore import QRect, Qt
 
 class HUD:
-    """Heads-up display overlay."""
+    """Manages the Heads-Up Display rendering."""
     
     def __init__(self):
-        self.font = QFont("Sans Serif", 16, QFont.Weight.Bold)
-        self.small_font = QFont("Sans Serif", 12)
+        # Fonts
+        self.font_large = QFont("Segoe UI", 24, QFont.Weight.Bold)
+        self.font_small = QFont("Segoe UI", 16)
+        self.font_bold = QFont("Segoe UI", 18, QFont.Weight.Bold)
         
-    def render(self, painter: QPainter, score: int, coins: int, health: int, distance: int):
+    def render(self, painter: QPainter, score: int, coins: int, health: int, distance: int, level: str = "level1"):
         """Render HUD elements."""
+        window_width = painter.device().width()
+        
         painter.save()
         
-        # Semi-transparent background panel
-        panel_color = QColor(20, 20, 30, 200)
-        painter.setBrush(QBrush(panel_color))
-        painter.setPen(QPen(QColor(100, 100, 120), 2))
-        painter.drawRoundedRect(10, 10, 280, 100, 10, 10)
+        # --- 1. TAMPILKAN LEVEL (Tengah Atas) ---
+        # Format teks: "level1" -> "LEVEL 1"
+        level_text = level.replace("level", "LEVEL ").upper()
         
-        # Text color
-        text_color = QColor(255, 255, 255)
-        painter.setPen(text_color)
-        painter.setFont(self.font)
+        painter.setFont(self.font_large)
+        # Efek Shadow untuk teks Level
+        painter.setPen(QColor(0, 0, 0, 150))
+        painter.drawText(QRect(2, 12, window_width, 50), Qt.AlignmentFlag.AlignCenter, level_text)
+        # Teks Utama Level
+        painter.setPen(QColor(255, 215, 0))  # Warna Emas
+        painter.drawText(QRect(0, 10, window_width, 50), Qt.AlignmentFlag.AlignCenter, level_text)
         
-        # Score
-        painter.drawText(QRect(20, 20, 260, 25), Qt.AlignmentFlag.AlignLeft, f"Score: {score}")
+        # --- 2. Score & Coins (Kiri Atas) ---
+        painter.setFont(self.font_bold)
+        painter.setPen(QColor(255, 255, 255))
+        painter.drawText(20, 40, f"SCORE: {score:05d}")
         
-        # Coins
-        coin_color = QColor(255, 215, 0)
-        painter.setPen(coin_color)
-        painter.drawText(QRect(20, 48, 260, 25), Qt.AlignmentFlag.AlignLeft, f"💰 Coins: {coins}")
+        painter.setPen(QColor(255, 223, 0))  # Kuning Koin
+        painter.drawText(20, 70, f"COINS: {coins}")
         
-        # Health
-        self._render_hearts(painter, 20, 76, health, 3)
+        # --- 3. Distance (Kanan Bawah - Opsional) ---
+        painter.setFont(self.font_small)
+        painter.setPen(QColor(200, 200, 200))
+        painter.drawText(window_width - 150, 40, f"DIST: {distance}m")
         
-        # Distance (top-right)
-        painter.setPen(text_color)
-        painter.setFont(self.small_font)
-        painter.drawText(QRect(20, 100, 260, 20), Qt.AlignmentFlag.AlignLeft, f"Distance: {distance}m")
+        # --- 4. Health Bar (Kanan Atas) ---
+        self._render_health(painter, health, window_width)
         
         painter.restore()
         
-    def _render_hearts(self, painter: QPainter, x: int, y: int, current: int, maximum: int):
-        """Render health hearts."""
-        heart_size = 20
-        spacing = 25
+    def _render_health(self, painter: QPainter, health: int, width: int):
+        """Draw heart icons or health bar."""
+        # Gambar 3 kotak/hati melambangkan nyawa
+        start_x = width - 140
+        y = 60
+        box_size = 30
+        gap = 10
         
-        for i in range(maximum):
-            heart_x = x + i * spacing
+        for i in range(3):
+            x = start_x + i * (box_size + gap)
             
-            if i < current:
-                # Full heart
-                color = QColor(255, 50, 50)
+            # Border
+            painter.setPen(QPen(QColor(255, 255, 255), 2))
+            
+            if i < health:
+                # Nyawa penuh (Merah)
+                painter.setBrush(QBrush(QColor(255, 50, 50)))
             else:
-                # Empty heart
-                color = QColor(100, 100, 100)
+                # Nyawa kosong (Transparan/Gelap)
+                painter.setBrush(QBrush(QColor(50, 0, 0, 100)))
                 
-            self._draw_heart(painter, heart_x, y, heart_size, color)
-            
-    def _draw_heart(self, painter: QPainter, x: int, y: int, size: int, color: QColor):
-        """Draw a heart shape."""
-        painter.setBrush(QBrush(color))
-        painter.setPen(QPen(QColor(200, 50, 50) if color.red() > 200 else QColor(70, 70, 70), 2))
-        
-        # Simplified heart using circles and triangle
-        half = size // 2
-        
-        # Left circle
-        painter.drawEllipse(x, y, half, half)
-        # Right circle
-        painter.drawEllipse(x + half, y, half, half)
-        
-        # Bottom triangle
-        # FIX: Gunakan QPolygonF dengan QPointF, jangan list biasa
-        triangle = QPolygonF([
-            QPointF(x, y + half / 2),
-            QPointF(x + size, y + half / 2),
-            QPointF(x + half, y + size)
-        ])
-        
-        painter.drawPolygon(triangle)
+            painter.drawRect(x, y, box_size, box_size)
