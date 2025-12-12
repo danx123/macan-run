@@ -1,6 +1,7 @@
 """
 Game Engine - Main loop and game state management
 Handles timing, updates, and coordinates all game systems
+FIXED: Level progression and input handling
 """
 import time
 from enum import Enum
@@ -13,6 +14,7 @@ from core.input_manager import InputManager
 from game.level_manager import LevelManager
 from ui.hud import HUD
 from services.save_manager import SaveManager
+from run_sfx import SoundManager
 
 
 class GameState(Enum):
@@ -47,6 +49,9 @@ class GameEngine:
         self.level_manager = LevelManager(self.physics)
         self.hud = HUD()
         self.save_manager = SaveManager()
+
+        # Sound Manager
+        self.sound = SoundManager("run_sound")
         
         # Game state
         self.score = 0
@@ -82,7 +87,7 @@ class GameEngine:
         if self.delta_time > 0.1:
             self.delta_time = 0.1
             
-        # FIX 1: Handle input ALWAYS, regardless of state
+        # Handle input regarding state
         self._handle_input()
             
         # Update based on state
@@ -94,11 +99,9 @@ class GameEngine:
         
     def update(self):
         """Update game logic."""
-        # FIX 2: Removed _handle_input() from here, moved to tick()
-        
         # Update player
         if self.level_manager.player:
-            self.level_manager.player.update(self.delta_time, self.input)
+            self.level_manager.player.update(self.delta_time, self.input, self.sound)
             
         # Update physics
         self.physics.update(self.delta_time, self.level_manager)
@@ -138,7 +141,8 @@ class GameEngine:
                     score=self.score,
                     coins=self.total_coins,
                     health=player.health,
-                    distance=int(player.x / 48)
+                    distance=int(player.x / 48),
+                    level=self.current_level
                 )
                 
             # Render pause overlay
@@ -171,12 +175,16 @@ class GameEngine:
             if self.input.is_key_pressed('Space') or self.input.is_key_pressed('Return'):
                 self.start_game()
         
-        # FIX 3: Add logic for Game Over and Level Complete
-        elif self.state in [GameState.GAME_OVER, GameState.LEVEL_COMPLETE]:
+        # Game Over controls (Restart)
+        elif self.state == GameState.GAME_OVER:
             if self.input.is_key_pressed('Space') or self.input.is_key_pressed('Return'):
-                # Restart the game / level
-                self.start_game()
-                # Clear key to prevent immediate jump if restart is instant
+                self.start_game() # Full restart
+                self.input.clear_key('Space')
+
+        # Level Complete controls (Next Level)
+        elif self.state == GameState.LEVEL_COMPLETE:
+            if self.input.is_key_pressed('Space') or self.input.is_key_pressed('Return'):
+                self.next_level() # Advance level
                 self.input.clear_key('Space')
                 
     def _update_camera(self):
@@ -221,13 +229,13 @@ class GameEngine:
                     enemy.health -= 1
                     player.vy = -300
                     self.score += 50
-                    self._play_sfx("enemy_hit")
+                    self._play_sfx("hit")
                     if enemy.health <= 0:
                         self.level_manager.enemies.remove(enemy)
                 else:
                     # Take damage
                     player.take_damage()
-                    self._play_sfx("hurt")
+                    self._play_sfx("hit")
                     
         # Check spikes
         for spike in self.level_manager.spikes:
@@ -239,6 +247,7 @@ class GameEngine:
             if self.physics.check_collision(player, self.level_manager.finish):
                 self.state = GameState.LEVEL_COMPLETE
                 self._play_sfx("win")
+                self.sound.stop_bgm() # Stop music on win
                 
     def _check_game_state(self):
         """Check for game over conditions."""
@@ -254,22 +263,44 @@ class GameEngine:
         # Health depleted
         if player.health <= 0:
             self.state = GameState.GAME_OVER
-            self._play_sfx("game_over")
+            self._play_sfx("death")
+            self.sound.stop_bgm()
             
     def toggle_pause(self):
         """Toggle pause state."""
         if self.state == GameState.RUNNING:
             self.state = GameState.PAUSED
+            self.sound.pause_bgm()
         elif self.state == GameState.PAUSED:
             self.state = GameState.RUNNING
+            self.sound.resume_bgm()
             
     def start_game(self):
-        """Start or restart game."""
+        """Start or restart game from Level 1."""
         self.score = 0
         self.total_coins = 0
+        self.current_level = "level1" # Reset to level 1
+        self.sound.reset()
         self.level_manager.load_level(self.current_level)
         self.state = GameState.RUNNING
-        self._play_bgm("main_theme")
+        self._play_bgm("run_bgm.mp3")
+
+    def next_level(self):
+        """Advance to the next level."""
+        try:
+            # Parse current level number and increment
+            current_num = int(self.current_level.replace("level", ""))
+            next_num = current_num + 1
+        except ValueError:
+            next_num = 1
+            
+        self.current_level = f"level{next_num}"
+        print(f"Loading {self.current_level}...")
+        
+        # Load the next level (LevelManager handles file missing fallback)
+        self.level_manager.load_level(self.current_level)
+        self.state = GameState.RUNNING
+        self._play_bgm("run_bgm.mp3")
         
     def on_key_press(self, event):
         """Handle key press event."""
@@ -286,6 +317,8 @@ class GameEngine:
     def shutdown(self):
         """Cleanup and save before exit."""
         self.timer.stop()
+
+        self.sound.cleanup()
         
         # Save game state
         if self.level_manager.player:
@@ -301,17 +334,9 @@ class GameEngine:
             })
             
     def _play_sfx(self, name: str):
-        """Play sound effect (stub with fallback)."""
-        try:
-            from PySide6.QtMultimedia import QSoundEffect
-            pass
-        except ImportError:
-            pass
-        
-    def _play_bgm(self, track: str):
-        """Play background music (stub with fallback)."""
-        try:
-            from PySide6.QtMultimedia import QMediaPlayer
-            pass
-        except ImportError:
-            pass
+        """Play sound effect."""
+        self.sound.play_sfx(name)
+    
+    def _play_bgm(self, track: str = "run_bgm.mp3"):
+        """Play background music."""
+        self.sound.play_bgm(track, loop=True)
