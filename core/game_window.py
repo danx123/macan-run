@@ -2,10 +2,11 @@
 Game window and main widget setup
 Handles window creation and central game widget
 """
+import os
+import sys
 from PySide6.QtWidgets import QMainWindow, QWidget
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QPalette, QColor
-
+from PySide6.QtGui import QPalette, QColor, QIcon
 from core.engine import GameEngine
 
 
@@ -14,7 +15,7 @@ class GameWidget(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumSize(QSize(1024, 768))
+        self.setMinimumSize(QSize(1024, 768))        
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         
         # Initialize game engine
@@ -46,6 +47,11 @@ class GameWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Macan Run - Neo Edition")
         self.resize(1024, 768)
+        icon_path = "run.ico"
+        if hasattr(sys, "_MEIPASS"):
+            icon_path = os.path.join(sys._MEIPASS, icon_path)
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         
         # Set dark palette for better game aesthetics
         self._setup_palette()
