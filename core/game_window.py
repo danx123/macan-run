@@ -1,6 +1,7 @@
 """
 Game window and main widget setup
 Handles window creation and central game widget
+FIXED: Don't auto-start game, show menu first
 """
 import os
 import sys
@@ -18,9 +19,12 @@ class GameWidget(QWidget):
         self.setMinimumSize(QSize(1024, 768))        
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         
-        # Initialize game engine
+        # Initialize game engine (but don't start yet - show menu)
         self.engine = GameEngine(self)
-        self.engine.start()
+        # Don't call engine.start() here - let menu handle it
+        
+        # Start timer for menu rendering
+        self.engine.timer.start(self.engine.frame_time)
         
     def paintEvent(self, event):
         """Render game via engine."""
