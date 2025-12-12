@@ -24,7 +24,10 @@ A professional 2D platformer game built with Python and PySide6, featuring manua
 | **ESC** | Pause or return to menu |
 
 ## Screenshot
-<img width="1027" height="738" alt="Screenshot 2025-12-12 092636" src="https://github.com/user-attachments/assets/1b3f06a6-9825-42ad-b0b6-cb006bace1f9" />
+<img width="1022" height="767" alt="Screenshot 2025-12-12 202721" src="https://github.com/user-attachments/assets/ab8762f7-3fb6-4ce6-b70b-c4a6138f6019" />
+<img width="1019" height="767" alt="Screenshot 2025-12-12 202737" src="https://github.com/user-attachments/assets/b332e8d9-d822-4e91-a2b2-78c8d44fe00c" />
+
+
 
 
 
