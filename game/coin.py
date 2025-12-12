@@ -1,5 +1,6 @@
 """
 Coin - Collectible item, Spikes, and Finish Flag
+FIXED: Finish flag collision box and visibility
 """
 import math
 from PySide6.QtGui import QPainter, QColor, QBrush, QPen, QRadialGradient, QPolygonF
@@ -91,7 +92,7 @@ class Spike:
         painter.setBrush(QBrush(spike_color))
         painter.setPen(QPen(QColor(100, 100, 100), 2))
         
-        # Triangle points - FIX: Use QPolygonF with QPointF
+        # Triangle points
         triangle = QPolygonF([
             QPointF(screen_x + self.width / 2, screen_y),          # Top
             QPointF(screen_x, screen_y + self.height),             # Bottom left
@@ -104,12 +105,13 @@ class Spike:
 
 
 class Finish:
-    """Level finish flag."""
+    """Level finish flag - FIXED collision box."""
     
     def __init__(self, x: float, y: float):
         self.x = x
         self.y = y
-        self.width = 48
+        # LARGER collision box for easier detection
+        self.width = 64
         self.height = 96
         self.animation_time = 0.0
         
@@ -118,34 +120,45 @@ class Finish:
         self.animation_time += delta_time
         
     def render(self, painter: QPainter, camera_x: float, camera_y: float):
-        """Render finish flag."""
+        """Render finish flag - ALWAYS VISIBLE."""
         screen_x = self.x - camera_x
         screen_y = self.y - camera_y
         
-        if screen_x < -100 or screen_x > 1200:
-            return
-            
+        # DON'T skip rendering - always show finish flag!
+        # Removed off-screen culling to ensure visibility
+        
         painter.save()
         
-        # Flag pole
+        # Flag pole (thicker for visibility)
         painter.setBrush(QBrush(QColor(139, 69, 19)))
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawRect(screen_x + 20, screen_y, 8, self.height)
+        painter.drawRect(screen_x + 26, screen_y, 12, self.height)
         
         # Flag (waving animation)
         wave = math.sin(self.animation_time * 5) * 5
         
-        flag_color = QColor(50, 200, 50)
+        # BRIGHT GREEN flag for visibility
+        flag_color = QColor(50, 255, 50)
         painter.setBrush(QBrush(flag_color))
-        painter.setPen(QPen(QColor(30, 150, 30), 2))
+        painter.setPen(QPen(QColor(30, 200, 30), 2))
         
-        # Flag polygon - FIX: Use QPolygonF with QPointF
+        # Flag polygon
         flag_shape = QPolygonF([
-            QPointF(screen_x + 28, screen_y + 10),
-            QPointF(screen_x + 68 + wave, screen_y + 25),
-            QPointF(screen_x + 28, screen_y + 40)
+            QPointF(screen_x + 38, screen_y + 15),
+            QPointF(screen_x + 78 + wave, screen_y + 35),
+            QPointF(screen_x + 38, screen_y + 55)
         ])
         
         painter.drawPolygon(flag_shape)
+        
+        # Add "GOAL" text for clarity
+        painter.setPen(QColor(255, 255, 255))
+        painter.setFont(painter.font())
+        painter.drawText(int(screen_x + 5), int(screen_y + self.height + 20), "GOAL")
+        
+        # Debug: Draw collision box (optional - comment out in production)
+        # painter.setPen(QPen(QColor(255, 0, 0, 100), 2))
+        # painter.setBrush(Qt.BrushStyle.NoBrush)
+        # painter.drawRect(screen_x, screen_y, self.width, self.height)
         
         painter.restore()
