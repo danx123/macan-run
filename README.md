@@ -69,13 +69,16 @@ The game window will appear and you can start playing immediately by pressing **
 macan-run/
 ├── main.py                 # Entry point
 ├── core/
+|   ├── create_all_level.py # Create level automatically
 │   ├── game_window.py      # Main window and widget
 │   ├── engine.py           # Game engine and loop
 │   ├── renderer.py         # QPainter rendering
 │   ├── physics.py          # Physics engine
 │   └── input_manager.py    # Keyboard input
 ├── game/
+|   ├── particles.py        # Particles effect
 │   ├── player.py           # Player character
+|   ├── powerup.py          # Boost Player Speed, Health, Jump
 │   ├── enemy.py            # Enemy AI
 │   ├── coin.py             # Collectibles and hazards
 │   ├── tilemap.py          # Tile rendering
@@ -107,7 +110,13 @@ Levels are defined using ASCII art in `.txt` files within the `levels/` folder.
 | `C` | Coin (collectible) |
 | `E` | Enemy spawn |
 | `P` | Player spawn point |
-| `F` | Finish flag |
+| `F` | Flaying Enemy |
+| 'G` | Goal/Finish |
+| 'H` | Health |
+| 'J` | Jump |
+| 'S` | Speed |
+| 'D` | Shield |
+
 
 ### Example Level
 
