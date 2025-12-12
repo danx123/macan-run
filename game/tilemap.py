@@ -1,6 +1,8 @@
 """
 TileMap - ASCII map rendering and tile management
 Tiles drawn via QPainter with no image files
+Updated to skip all entity markers including power-ups
+FIXED: Properly skip G (Goal/Finish) marker
 """
 from typing import List
 from PySide6.QtGui import QPainter, QColor, QBrush, QPen, QLinearGradient
@@ -55,8 +57,10 @@ class TileMap:
                 if tile == '.' or tile == ' ':
                     continue
                     
-                # Skip entity markers (rendered separately)
-                if tile in ['P', 'E', 'C', '^', 'F']:
+                # Skip ALL entity markers (rendered separately by LevelManager)
+                # P=Player, E=Enemy, F=Flying Enemy, C=Coin, ^=Spike
+                # G=Goal/Finish, S=Speed, H=Health, J=Jump, D=Shield
+                if tile in ['P', 'E', 'F', 'C', '^', 'G', 'S', 'H', 'J', 'D']:
                     continue
                     
                 screen_x = col * self.tile_size - camera_x
