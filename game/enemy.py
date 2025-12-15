@@ -1,9 +1,9 @@
 """
 Enemy - Enemy entities with various AI patterns
-Includes basic patrol enemy and flying enemy variants
+ENHANCED: Added new enemy types - Jumper, Charger, and Bomber
 """
 import math
-from PySide6.QtGui import QPainter, QColor, QBrush, QPen, QPolygonF
+from PySide6.QtGui import QPainter, QColor, QBrush, QPen, QPolygonF, QRadialGradient
 from PySide6.QtCore import QRectF, Qt, QPointF
 
 
@@ -274,8 +274,303 @@ class FlyingEnemy(Enemy):
             self._draw_health_bar(painter, screen_x, screen_y - 10)
 
 
+class JumperEnemy(Enemy):
+    """Enemy that jumps periodically - NEW!"""
+    
+    def __init__(self, x: float, y: float):
+        super().__init__(x, y, patrol_range=100)
+        
+        self.move_speed = 60.0
+        self.vy = 0.0  # Vertical velocity
+        self.on_ground = True
+        self.jump_timer = 0.0
+        self.jump_interval = 2.0  # Jump every 2 seconds
+        self.jump_force = -350.0
+        self.health = 2
+        self.width = 34
+        self.height = 34
+        
+    def update(self, delta_time: float):
+        if not self.alive:
+            return
+            
+        # Horizontal movement
+        self.x += self.move_speed * self.direction * delta_time
+        
+        # Gravity
+        if not self.on_ground:
+            self.vy += 980 * delta_time
+            self.y += self.vy * delta_time
+        
+        # Simple ground check (reset at spawn_y)
+        if self.y >= self.spawn_y:
+            self.y = self.spawn_y
+            self.vy = 0
+            self.on_ground = True
+        
+        # Jump timer
+        self.jump_timer += delta_time
+        if self.jump_timer >= self.jump_interval and self.on_ground:
+            self.vy = self.jump_force
+            self.on_ground = False
+            self.jump_timer = 0.0
+        
+        # Patrol bounds
+        distance_from_spawn = abs(self.x - self.spawn_x)
+        if distance_from_spawn > self.patrol_range:
+            self.direction *= -1
+            
+        self.animation_time += delta_time
+        
+    def render(self, painter: QPainter, camera_x: float, camera_y: float):
+        if not self.alive:
+            return
+            
+        screen_x = self.x - camera_x
+        screen_y = self.y - camera_y
+        
+        if screen_x < -100 or screen_x > 1200:
+            return
+            
+        painter.save()
+        
+        center_x = screen_x + self.width / 2
+        center_y = screen_y + self.height / 2
+        
+        # Body (spring-like)
+        body_color = QColor(255, 150, 50)  # Orange
+        painter.setBrush(QBrush(body_color))
+        painter.setPen(QPen(QColor(200, 100, 30), 2))
+        
+        # Squash and stretch when jumping
+        if not self.on_ground:
+            # Stretched in air
+            painter.drawEllipse(center_x - 12, center_y - 18, 24, 36)
+        else:
+            # Squashed on ground
+            painter.drawEllipse(center_x - 16, center_y - 14, 32, 28)
+        
+        # Spring coil lines
+        painter.setPen(QPen(QColor(150, 80, 20), 2))
+        for i in range(3):
+            y_offset = -10 + i * 8
+            painter.drawLine(center_x - 10, center_y + y_offset, center_x + 10, center_y + y_offset)
+        
+        # Eyes
+        painter.setBrush(QBrush(QColor(50, 50, 50)))
+        painter.setPen(Qt.PenStyle.NoPen)
+        eye_offset = 5 if self.direction > 0 else -5
+        painter.drawEllipse(center_x + eye_offset - 3, center_y - 8, 6, 6)
+        
+        painter.restore()
+        
+        if self.health < self.max_health:
+            self._draw_health_bar(painter, screen_x, screen_y - 10)
+
+
+class ChargerEnemy(Enemy):
+    """Enemy that charges at player when in range - NEW!"""
+    
+    def __init__(self, x: float, y: float):
+        super().__init__(x, y, patrol_range=200)
+        
+        self.normal_speed = 50.0
+        self.charge_speed = 250.0
+        self.move_speed = self.normal_speed
+        self.detection_range = 200.0
+        self.is_charging = False
+        self.charge_cooldown = 0.0
+        self.health = 3
+        self.max_health = 3
+        self.width = 38
+        self.height = 32
+        
+    def update(self, delta_time: float, player_x: float = None):
+        if not self.alive:
+            return
+        
+        # Cooldown
+        if self.charge_cooldown > 0:
+            self.charge_cooldown -= delta_time
+            
+        # Check if player is in range
+        if player_x is not None and self.charge_cooldown <= 0:
+            distance = abs(player_x - self.x)
+            if distance < self.detection_range:
+                # Start charging
+                self.is_charging = True
+                self.move_speed = self.charge_speed
+                self.direction = 1 if player_x > self.x else -1
+            else:
+                self.is_charging = False
+                self.move_speed = self.normal_speed
+        
+        # Move
+        self.x += self.move_speed * self.direction * delta_time
+        
+        # Patrol bounds (stop charge at edge)
+        distance_from_spawn = abs(self.x - self.spawn_x)
+        if distance_from_spawn > self.patrol_range:
+            self.direction *= -1
+            self.is_charging = False
+            self.move_speed = self.normal_speed
+            self.charge_cooldown = 2.0
+            
+        self.animation_time += delta_time
+        
+    def render(self, painter: QPainter, camera_x: float, camera_y: float):
+        if not self.alive:
+            return
+            
+        screen_x = self.x - camera_x
+        screen_y = self.y - camera_y
+        
+        if screen_x < -100 or screen_x > 1200:
+            return
+            
+        painter.save()
+        
+        center_x = screen_x + self.width / 2
+        center_y = screen_y + self.height / 2
+        
+        # Body color changes when charging
+        if self.is_charging:
+            body_color = QColor(255, 50, 50)  # Red when charging
+            glow = QRadialGradient(center_x, center_y, 25)
+            glow.setColorAt(0.0, QColor(255, 100, 100, 150))
+            glow.setColorAt(1.0, QColor(255, 50, 50, 0))
+            painter.setBrush(QBrush(glow))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(center_x - 25, center_y - 25, 50, 50)
+        else:
+            body_color = QColor(150, 100, 150)  # Purple when idle
+        
+        # Main body (bull-like)
+        painter.setBrush(QBrush(body_color))
+        painter.setPen(QPen(QColor(100, 50, 100), 2))
+        painter.drawEllipse(center_x - 16, center_y - 12, 32, 24)
+        
+        # Horns
+        horn_color = QColor(200, 200, 200)
+        painter.setBrush(QBrush(horn_color))
+        painter.setPen(Qt.PenStyle.NoPen)
+        
+        horn_offset = 12 if self.direction > 0 else -12
+        # Left horn
+        painter.drawPolygon(QPolygonF([
+            QPointF(center_x + horn_offset, center_y - 10),
+            QPointF(center_x + horn_offset + (8 * self.direction), center_y - 18),
+            QPointF(center_x + horn_offset + (4 * self.direction), center_y - 8)
+        ]))
+        
+        # Eyes (angry red)
+        painter.setBrush(QBrush(QColor(255, 0, 0) if self.is_charging else QColor(100, 50, 50)))
+        painter.drawEllipse(center_x + (5 * self.direction) - 3, center_y - 5, 6, 6)
+        
+        painter.restore()
+        
+        if self.health < self.max_health:
+            self._draw_health_bar(painter, screen_x, screen_y - 10)
+
+
+class BomberEnemy(Enemy):
+    """Enemy that explodes when player gets close - NEW!"""
+    
+    def __init__(self, x: float, y: float):
+        super().__init__(x, y, patrol_range=80)
+        
+        self.move_speed = 40.0
+        self.fuse_time = 0.0
+        self.is_triggered = False
+        self.explosion_range = 80.0
+        self.trigger_range = 100.0
+        self.explosion_delay = 2.0
+        self.health = 1
+        self.max_health = 1
+        self.width = 30
+        self.height = 30
+        
+    def update(self, delta_time: float, player_x: float = None, player_y: float = None):
+        if not self.alive:
+            return
+        
+        # Check if player is in trigger range
+        if player_x is not None and player_y is not None and not self.is_triggered:
+            distance = math.sqrt((player_x - self.x) ** 2 + (player_y - self.y) ** 2)
+            if distance < self.trigger_range:
+                self.is_triggered = True
+                
+        if self.is_triggered:
+            # Fuse countdown
+            self.fuse_time += delta_time
+            if self.fuse_time >= self.explosion_delay:
+                # Explode!
+                self.alive = False
+                return
+        else:
+            # Normal patrol
+            self.x += self.move_speed * self.direction * delta_time
+            distance_from_spawn = abs(self.x - self.spawn_x)
+            if distance_from_spawn > self.patrol_range:
+                self.direction *= -1
+                
+        self.animation_time += delta_time
+        
+    def render(self, painter: QPainter, camera_x: float, camera_y: float):
+        if not self.alive:
+            return
+            
+        screen_x = self.x - camera_x
+        screen_y = self.y - camera_y
+        
+        if screen_x < -100 or screen_x > 1200:
+            return
+            
+        painter.save()
+        
+        center_x = screen_x + self.width / 2
+        center_y = screen_y + self.height / 2
+        
+        # Body (bomb shape)
+        body_color = QColor(50, 50, 50) if not self.is_triggered else QColor(100, 0, 0)
+        painter.setBrush(QBrush(body_color))
+        painter.setPen(QPen(QColor(30, 30, 30), 2))
+        
+        # Bomb sphere
+        painter.drawEllipse(center_x - 12, center_y - 12, 24, 24)
+        
+        # Fuse on top
+        fuse_color = QColor(150, 100, 50)
+        painter.setBrush(QBrush(fuse_color))
+        painter.drawRect(center_x - 2, center_y - 18, 4, 8)
+        
+        # Spark at fuse tip (if triggered)
+        if self.is_triggered:
+            spark_size = 4 + math.sin(self.animation_time * 20) * 2
+            spark_color = QColor(255, 150, 0)
+            painter.setBrush(QBrush(spark_color))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(center_x - spark_size/2, center_y - 20 - spark_size/2, spark_size, spark_size)
+            
+            # Flashing effect
+            if int(self.fuse_time * 6) % 2 == 0:
+                flash_color = QColor(255, 0, 0, 100)
+                painter.setBrush(QBrush(flash_color))
+                painter.drawEllipse(center_x - 18, center_y - 18, 36, 36)
+        
+        painter.restore()
+        
+    def should_explode(self) -> bool:
+        """Check if bomb should explode."""
+        return self.is_triggered and self.fuse_time >= self.explosion_delay
+        
+    def get_explosion_radius(self) -> float:
+        """Get explosion damage radius."""
+        return self.explosion_range
+
+
 class SpinEnemy(Enemy):
-    """Enemy that spins in place and shoots projectiles (future expansion)."""
+    """Enemy that spins in place (existing enemy kept for compatibility)."""
     
     def __init__(self, x: float, y: float):
         """Initialize spin enemy."""
