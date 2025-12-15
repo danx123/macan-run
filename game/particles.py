@@ -1,6 +1,6 @@
 """
 Particle System - Visual effects with particles
-Creates explosions, trails, and various particle effects
+OPTIMIZED: Better culling and batch rendering
 """
 import random
 import math
@@ -14,16 +14,7 @@ class Particle:
     
     def __init__(self, x: float, y: float, vx: float, vy: float, 
                  color: QColor, lifetime: float, size: float = 4.0):
-        """
-        Initialize particle.
-        
-        Args:
-            x, y: Initial position
-            vx, vy: Initial velocity
-            color: Particle color
-            lifetime: How long particle lives (seconds)
-            size: Particle radius
-        """
+        """Initialize particle."""
         self.x = x
         self.y = y
         self.vx = vx
@@ -35,16 +26,7 @@ class Particle:
         self.initial_size = size
         
     def update(self, delta_time: float, gravity: float = 300.0) -> bool:
-        """
-        Update particle physics.
-        
-        Args:
-            delta_time: Time elapsed
-            gravity: Gravity strength
-            
-        Returns:
-            True if particle is still alive, False if expired
-        """
+        """Update particle physics."""
         self.age += delta_time
         
         # Check if expired
@@ -89,42 +71,32 @@ class Particle:
 
 
 class ParticleSystem:
-    """Manages multiple particle effects."""
+    """Manages multiple particle effects with optimizations."""
     
     def __init__(self):
         """Initialize particle system."""
         self.particles: List[Particle] = []
-        self.max_particles = 500  # Performance limit
+        self.max_particles = 300  # Reduced from 500 for performance
         
     def emit_burst(self, x: float, y: float, count: int = 10, 
                    color: QColor = None, speed_range: tuple = (50, 200)):
-        """
-        Emit explosion burst of particles.
-        
-        Args:
-            x, y: Origin point
-            count: Number of particles
-            color: Particle color (default: yellow)
-            speed_range: (min, max) speed range
-        """
+        """Emit explosion burst of particles."""
         if color is None:
             color = QColor(255, 200, 0)
+        
+        # Limit burst size for performance
+        count = min(count, 20)
             
         for _ in range(count):
-            # Random direction
             angle = random.uniform(0, 2 * math.pi)
             speed = random.uniform(*speed_range)
             
             vx = math.cos(angle) * speed
-            vy = math.sin(angle) * speed - 100  # Bias upward
+            vy = math.sin(angle) * speed - 100
             
-            # Random lifetime
-            lifetime = random.uniform(0.5, 1.5)
+            lifetime = random.uniform(0.5, 1.2)
+            size = random.uniform(3, 6)
             
-            # Random size
-            size = random.uniform(3, 7)
-            
-            # Slight color variation
             r = min(255, color.red() + random.randint(-20, 20))
             g = min(255, color.green() + random.randint(-20, 20))
             b = min(255, color.blue() + random.randint(-20, 20))
@@ -134,28 +106,18 @@ class ParticleSystem:
             
     def emit_trail(self, x: float, y: float, vx: float, vy: float,
                    color: QColor = None, intensity: int = 1):
-        """
-        Emit trail particles behind moving object.
-        
-        Args:
-            x, y: Current position
-            vx, vy: Current velocity
-            color: Trail color (default: white)
-            intensity: Number of particles to emit
-        """
+        """Emit trail particles behind moving object."""
         if color is None:
             color = QColor(200, 200, 200)
             
         for _ in range(intensity):
-            # Offset from center
             offset_x = random.uniform(-5, 5)
             offset_y = random.uniform(-5, 5)
             
-            # Velocity opposite to movement
             trail_vx = -vx * 0.3 + random.uniform(-20, 20)
             trail_vy = -vy * 0.3 + random.uniform(-20, 20)
             
-            lifetime = random.uniform(0.3, 0.8)
+            lifetime = random.uniform(0.3, 0.6)
             size = random.uniform(2, 4)
             
             self._add_particle(Particle(
@@ -165,20 +127,13 @@ class ParticleSystem:
             ))
             
     def emit_jump_dust(self, x: float, y: float, direction: int = 0):
-        """
-        Emit dust particles when jumping/landing.
-        
-        Args:
-            x, y: Position
-            direction: -1 for left, 1 for right, 0 for both sides
-        """
+        """Emit dust particles when jumping/landing."""
         dust_color = QColor(150, 150, 150)
         
-        count = 8
+        count = 5  # Reduced from 8 for performance
         for i in range(count):
-            # Spread particles to sides
             if direction == 0:
-                angle = random.uniform(-math.pi, 0)  # Downward spread
+                angle = random.uniform(-math.pi, 0)
             elif direction < 0:
                 angle = random.uniform(-math.pi * 0.8, -math.pi * 0.2)
             else:
@@ -188,8 +143,8 @@ class ParticleSystem:
             vx = math.cos(angle) * speed
             vy = math.sin(angle) * speed
             
-            lifetime = random.uniform(0.3, 0.6)
-            size = random.uniform(3, 6)
+            lifetime = random.uniform(0.3, 0.5)
+            size = random.uniform(3, 5)
             
             self._add_particle(Particle(x, y, vx, vy, dust_color, lifetime, size))
             
@@ -197,15 +152,16 @@ class ParticleSystem:
         """Emit sparkle effect when collecting coin."""
         sparkle_color = QColor(255, 223, 0)
         
-        for _ in range(12):
+        count = 8  # Reduced from 12 for performance
+        for _ in range(count):
             angle = random.uniform(0, 2 * math.pi)
-            speed = random.uniform(80, 150)
+            speed = random.uniform(80, 120)
             
             vx = math.cos(angle) * speed
             vy = math.sin(angle) * speed
             
-            lifetime = random.uniform(0.4, 0.8)
-            size = random.uniform(2, 5)
+            lifetime = random.uniform(0.3, 0.6)
+            size = random.uniform(2, 4)
             
             self._add_particle(Particle(x, y, vx, vy, sparkle_color, lifetime, size))
             
@@ -213,36 +169,37 @@ class ParticleSystem:
         """Emit red particles when taking damage."""
         damage_color = QColor(255, 50, 50)
         
-        for _ in range(15):
+        count = 10  # Reduced from 15 for performance
+        for _ in range(count):
             angle = random.uniform(0, 2 * math.pi)
-            speed = random.uniform(100, 200)
+            speed = random.uniform(100, 180)
             
             vx = math.cos(angle) * speed
             vy = math.sin(angle) * speed - 50
             
-            lifetime = random.uniform(0.3, 0.7)
-            size = random.uniform(3, 6)
+            lifetime = random.uniform(0.3, 0.6)
+            size = random.uniform(3, 5)
             
             self._add_particle(Particle(x, y, vx, vy, damage_color, lifetime, size))
             
     def emit_enemy_death(self, x: float, y: float):
         """Emit explosion when enemy dies."""
-        for _ in range(20):
+        count = 12  # Reduced from 20 for performance
+        for _ in range(count):
             angle = random.uniform(0, 2 * math.pi)
-            speed = random.uniform(80, 250)
+            speed = random.uniform(80, 200)
             
             vx = math.cos(angle) * speed
             vy = math.sin(angle) * speed
             
-            # Mix of red and orange
             color = QColor(
                 random.randint(200, 255),
                 random.randint(50, 150),
                 random.randint(0, 50)
             )
             
-            lifetime = random.uniform(0.5, 1.2)
-            size = random.uniform(4, 8)
+            lifetime = random.uniform(0.5, 1.0)
+            size = random.uniform(4, 7)
             
             self._add_particle(Particle(x, y, vx, vy, color, lifetime, size))
             
@@ -259,9 +216,21 @@ class ParticleSystem:
         ]
         
     def render(self, painter: QPainter, camera_x: float, camera_y: float):
-        """Render all active particles."""
+        """Render all active particles with culling."""
+        screen_width = painter.device().width()
+        screen_height = painter.device().height()
+        
+        # Batch rendering setup
+        painter.setPen(Qt.PenStyle.NoPen)
+        
+        # Only render visible particles
         for particle in self.particles:
-            particle.render(painter, camera_x, camera_y)
+            screen_x = particle.x - camera_x
+            screen_y = particle.y - camera_y
+            
+            # Cull off-screen particles
+            if -50 < screen_x < screen_width + 50 and -50 < screen_y < screen_height + 50:
+                particle.render(painter, camera_x, camera_y)
             
     def clear(self):
         """Remove all particles."""
