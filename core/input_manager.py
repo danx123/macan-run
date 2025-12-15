@@ -25,6 +25,9 @@ class InputManager:
             Qt.Key.Key_W: 'W',
             Qt.Key.Key_S: 'S',
             Qt.Key.Key_P: 'P',
+            Qt.Key.Key_Q: 'Q',  # Quit
+            Qt.Key.Key_Y: 'Y',  # Yes
+            Qt.Key.Key_N: 'N',  # No
             Qt.Key.Key_R: 'R',  # Restart
             Qt.Key.Key_L: 'L',  # Load
             Qt.Key.Key_Escape: 'Escape',
