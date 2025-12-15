@@ -1,6 +1,7 @@
 """
 Power-Up System - Collectible power-ups with various effects
-FIXED: Collision detection and visual feedback
+FIXED: Much larger collision box (48x48) and enhanced visibility
+Now as easy to collect as coins!
 """
 import math
 from enum import Enum
@@ -29,15 +30,16 @@ class PowerUp:
         """
         self.x = x
         self.y = y
-        # LARGER collision box for easier pickup
-        self.width = 40
-        self.height = 40
+        # MUCH LARGER collision box - same as tile size for easy pickup!
+        self.width = 48  # Same as tile size (easy to collect)
+        self.height = 48  # Same as tile size (easy to collect)
         self.type = powerup_type
         
         # Animation
         self.animation_time = 0.0
         self.float_offset = 0.0
         self.rotation = 0.0
+        self.pulse_scale = 1.0
         
         # Visual properties per type
         self.properties = {
@@ -53,7 +55,7 @@ class PowerUp:
             },
             PowerUpType.TRIPLE_JUMP: {
                 'color': QColor(200, 100, 255),
-                'symbol': '↑',
+                'symbol': '⬆',
                 'name': 'Triple Jump'
             },
             PowerUpType.HEALTH: {
@@ -67,14 +69,17 @@ class PowerUp:
         """Update power-up animation."""
         self.animation_time += delta_time
         
-        # Floating animation (MORE VISIBLE)
-        self.float_offset = math.sin(self.animation_time * 3) * 8
+        # Floating animation (BIGGER movement for visibility)
+        self.float_offset = math.sin(self.animation_time * 2.5) * 12
         
-        # Rotation animation
-        self.rotation = self.animation_time * 80  # degrees per second
+        # Rotation animation (slower, smoother)
+        self.rotation = self.animation_time * 60  # degrees per second
+        
+        # Pulsing scale for attention
+        self.pulse_scale = 1.0 + math.sin(self.animation_time * 4) * 0.15
         
     def render(self, painter: QPainter, camera_x: float, camera_y: float):
-        """Render power-up with glow effect."""
+        """Render power-up with VERY visible glow effect."""
         screen_x = self.x - camera_x
         screen_y = self.y - camera_y + self.float_offset
         
@@ -88,69 +93,81 @@ class PowerUp:
         center_x = screen_x + self.width / 2
         center_y = screen_y + self.height / 2
         
-        # Draw LARGE pulsing glow for visibility
-        pulse = 0.8 + math.sin(self.animation_time * 6) * 0.4
-        glow_radius = self.width * 1.2 * pulse
+        # Draw VERY LARGE pulsing glow (multiple layers)
+        pulse = self.pulse_scale
         
-        gradient = QRadialGradient(center_x, center_y, glow_radius)
-        glow_color = QColor(props['color'])
-        glow_color.setAlpha(120)
-        gradient.setColorAt(0.0, glow_color)
-        glow_color.setAlpha(0)
-        gradient.setColorAt(1.0, glow_color)
+        # Outer glow (biggest)
+        glow_radius_outer = self.width * 1.8 * pulse
+        gradient_outer = QRadialGradient(center_x, center_y, glow_radius_outer)
+        glow_color_outer = QColor(props['color'])
+        glow_color_outer.setAlpha(80)
+        gradient_outer.setColorAt(0.0, glow_color_outer)
+        glow_color_outer.setAlpha(0)
+        gradient_outer.setColorAt(1.0, glow_color_outer)
         
-        painter.setBrush(QBrush(gradient))
+        painter.setBrush(QBrush(gradient_outer))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(
-            center_x - glow_radius, 
-            center_y - glow_radius,
-            glow_radius * 2, 
-            glow_radius * 2
+            center_x - glow_radius_outer, 
+            center_y - glow_radius_outer,
+            glow_radius_outer * 2, 
+            glow_radius_outer * 2
+        )
+        
+        # Middle glow
+        glow_radius_mid = self.width * 1.3 * pulse
+        gradient_mid = QRadialGradient(center_x, center_y, glow_radius_mid)
+        glow_color_mid = QColor(props['color'])
+        glow_color_mid.setAlpha(150)
+        gradient_mid.setColorAt(0.0, glow_color_mid)
+        glow_color_mid.setAlpha(0)
+        gradient_mid.setColorAt(1.0, glow_color_mid)
+        
+        painter.setBrush(QBrush(gradient_mid))
+        painter.drawEllipse(
+            center_x - glow_radius_mid, 
+            center_y - glow_radius_mid,
+            glow_radius_mid * 2, 
+            glow_radius_mid * 2
         )
         
         # Rotate for effect
         painter.translate(center_x, center_y)
         painter.rotate(self.rotation)
+        painter.scale(pulse, pulse)
         painter.translate(-center_x, -center_y)
         
-        # Draw main icon box (LARGER)
+        # Draw main icon box (LARGE and VISIBLE)
         painter.setBrush(QBrush(props['color']))
-        painter.setPen(QPen(QColor(255, 255, 255), 3))
+        painter.setPen(QPen(QColor(255, 255, 255), 4))
         painter.drawRoundedRect(
-            screen_x + 4, screen_y + 4,
-            self.width - 8, self.height - 8,
-            8, 8
+            screen_x + 6, screen_y + 6,
+            self.width - 12, self.height - 12,
+            10, 10
         )
         
-        # Draw inner glow
-        inner_color = QColor(255, 255, 255, 150)
+        # Draw inner shine
+        inner_color = QColor(255, 255, 255, 180)
         painter.setBrush(QBrush(inner_color))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(
-            screen_x + 10, screen_y + 10,
-            self.width - 20, self.height - 20,
-            6, 6
+            screen_x + 14, screen_y + 14,
+            self.width - 28, self.height - 28,
+            8, 8
         )
         
         painter.restore()
         
-        # Draw symbol (not rotated, LARGER)
+        # Draw symbol (not rotated, LARGE)
         painter.save()
-        painter.setPen(QColor(255, 255, 255))
-        font = QFont("Sans Serif", 22, QFont.Weight.Bold)
+        painter.setPen(QColor(50, 50, 50))  # Dark outline for contrast
+        font = QFont("Sans Serif", 26, QFont.Weight.Bold)
         painter.setFont(font)
         
         text_rect = QRectF(screen_x, screen_y, self.width, self.height)
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, props['symbol'])
         
         painter.restore()
-        
-        # Debug: Draw collision box (optional)
-        # painter.save()
-        # painter.setPen(QPen(QColor(255, 0, 255, 100), 2))
-        # painter.setBrush(Qt.BrushStyle.NoBrush)
-        # painter.drawRect(screen_x, screen_y, self.width, self.height)
-        # painter.restore()
         
     def apply_to_player(self, player):
         """
@@ -189,7 +206,7 @@ class PowerUp:
             player.max_jumps = 3
             player.jumps_remaining = 3
             player.power_up_effects['triple_jump'] = 20.0
-            print("  ↑↑↑ Triple jump activated for 20s!")
+            print("  ⬆⬆⬆ Triple jump activated for 20s!")
             return True
             
         elif self.type == PowerUpType.HEALTH:
