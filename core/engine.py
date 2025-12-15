@@ -1,9 +1,10 @@
 """
 Game Engine - Main loop and game state management
-FIXED: Power-up collection logic (works like coins)
-ADDED: Save/Load system integration
+FIXED: Auto-advance to next level after 2 seconds
+UPDATED: Support for new enemy types with special behaviors
 """
 import time
+import math
 from enum import Enum
 from PySide6.QtCore import QTimer, QSize
 from PySide6.QtGui import QPainter, QColor
@@ -26,6 +27,7 @@ class GameState(Enum):
     PAUSED = "paused"
     GAME_OVER = "game_over"
     LEVEL_COMPLETE = "level_complete"
+    QUIT_CONFIRM = "quit_confirm"  # NEW: Quit confirmation
 
 
 class GameEngine:
@@ -65,6 +67,13 @@ class GameEngine:
         self.score = 0
         self.total_coins = 0
         self.current_level = "level1"
+        
+        # Quit confirmation state
+        self.quit_from_state = None  # Track where quit was called from
+        
+        # Level complete timer for auto-advance
+        self.level_complete_timer = 0.0
+        self.level_complete_delay = 2.0  # 2 seconds delay
         
         # Setup timer
         self.timer = QTimer()
@@ -117,6 +126,14 @@ class GameEngine:
         # Update based on state
         if self.state == GameState.RUNNING:
             self.update()
+        elif self.state == GameState.LEVEL_COMPLETE:
+            # Auto-advance timer
+            self.level_complete_timer += self.delta_time
+            if self.level_complete_timer >= self.level_complete_delay:
+                self.next_level()
+        elif self.state == GameState.QUIT_CONFIRM:
+            # Pause everything during quit confirmation
+            pass
         
         # Always render (including menu)
         self.widget.update()
@@ -141,9 +158,11 @@ class GameEngine:
         # Update particle system
         self.particles.update(self.delta_time)
         
-        # Update enemies
-        for enemy in self.level_manager.enemies:
-            enemy.update(self.delta_time)
+        # Update enemies (with player context for special enemies)
+        self.level_manager.update_enemies(self.delta_time)
+        
+        # Check bomber explosions
+        self._check_bomber_explosions()
             
         # Check collisions
         self._check_collisions()
@@ -164,6 +183,11 @@ class GameEngine:
         elif self.state in [GameState.RUNNING, GameState.PAUSED]:
             # Render game
             self.renderer.render_background(painter, self.camera_x)
+            
+            # Render foreground grass (parallax layer)
+            if self.level_manager.tilemap:
+                level_width = self.level_manager.tilemap.width * self.level_manager.tilemap.tile_size
+                self.renderer.render_foreground_grass(painter, self.camera_x, level_width)
             
             # Render level with camera offset
             self.level_manager.render(painter, self.camera_x, self.camera_y)
@@ -193,12 +217,38 @@ class GameEngine:
             # Render continue prompt
             self.hud.render_continue_prompt(painter, self.widget.size())
         elif self.state == GameState.LEVEL_COMPLETE:
-            self.renderer.render_level_complete(painter, self.widget.size(), self.score)
+            # Calculate remaining time for countdown
+            remaining_time = max(0, self.level_complete_delay - self.level_complete_timer)
+            self.renderer.render_level_complete(
+                painter, 
+                self.widget.size(), 
+                self.score,
+                countdown=remaining_time
+            )
+        elif self.state == GameState.QUIT_CONFIRM:
+            # Render quit confirmation dialog
+            self.renderer.render_quit_confirm(painter, self.widget.size())
             
         painter.end()
         
     def _handle_input(self):
         """Process input for game control."""
+        # Quit confirmation state
+        if self.state == GameState.QUIT_CONFIRM:
+            if self.input.is_key_pressed('Y') or self.input.is_key_pressed('Return'):
+                # Yes - Quit game
+                self.quit_game()
+                self.input.clear_key('Y')
+                self.input.clear_key('Return')
+            elif self.input.is_key_pressed('N') or self.input.is_key_pressed('Escape'):
+                # No - Return to previous state
+                if self.quit_from_state:
+                    self.state = self.quit_from_state
+                    self.quit_from_state = None
+                self.input.clear_key('N')
+                self.input.clear_key('Escape')
+            return
+        
         # Global controls
         if self.input.is_key_pressed('P'):
             self.toggle_pause()
@@ -219,6 +269,17 @@ class GameEngine:
             elif self.input.is_key_pressed('L') and self.has_save:
                 self.load_game()
                 self.input.clear_key('L')
+            elif self.input.is_key_pressed('Q'):
+                # Quit from menu
+                self.show_quit_confirm()
+                self.input.clear_key('Q')
+        
+        # Paused state controls
+        elif self.state == GameState.PAUSED:
+            if self.input.is_key_pressed('Q'):
+                # Quit from pause
+                self.show_quit_confirm()
+                self.input.clear_key('Q')
         
         # Game Over controls
         elif self.state == GameState.GAME_OVER:
@@ -231,12 +292,18 @@ class GameEngine:
             elif self.input.is_key_pressed('R'):
                 self.start_game()
                 self.input.clear_key('R')
+            # Quit
+            elif self.input.is_key_pressed('Q'):
+                self.show_quit_confirm()
+                self.input.clear_key('Q')
 
-        # Level Complete controls (Next Level)
+        # Level Complete controls (Optional manual skip)
         elif self.state == GameState.LEVEL_COMPLETE:
             if self.input.is_key_pressed('Space') or self.input.is_key_pressed('Return'):
+                # Allow manual skip before timer
                 self.next_level()
                 self.input.clear_key('Space')
+                self.input.clear_key('Return')
                 
     def _update_camera(self):
         """Update camera to follow player smoothly."""
@@ -278,29 +345,31 @@ class GameEngine:
                     coin.y + coin.height/2
                 )
 
-        # ✅ FIXED: Power-up collection (SAME AS COINS!)
+        # Power-up collection (IMPROVED - same as coins)
         for powerup in self.level_manager.powerups[:]:
+            # Check collision with generous hitbox
             if self.physics.check_collision(player, powerup):
-                print(f"💎 Power-up collision detected: {powerup.type.value}")
-                
-                # Apply effect FIRST
+                # Apply effect immediately
                 success = powerup.apply_to_player(player)
                 
                 if success:
                     # Remove from list
                     self.level_manager.powerups.remove(powerup)
-                    self._play_sfx("coin")  # TODO: Add specific powerup sound
+                    self._play_sfx("coin")  # Satisfying collection sound
                     
-                    # Particle burst effect
+                    # BIG particle burst effect for feedback
                     self.particles.emit_burst(
                         powerup.x + powerup.width/2,
                         powerup.y + powerup.height/2,
-                        count=15,
+                        count=25,  # More particles
                         color=powerup.properties[powerup.type]['color']
                     )
-                    print(f"✅ Power-up collected successfully!")
-                else:
-                    print(f"⚠️ Power-up effect failed to apply")
+                    
+                    # Sparkle effect too
+                    self.particles.emit_coin_sparkle(
+                        powerup.x + powerup.width/2,
+                        powerup.y + powerup.height/2
+                    )
                 
         # Enemy collision
         for enemy in self.level_manager.enemies[:]:
@@ -354,6 +423,7 @@ class GameEngine:
             if self.physics.check_collision(player, self.level_manager.finish):
                 print(f"🏁 FINISH LINE REACHED! Level {self.current_level} complete!")
                 self.state = GameState.LEVEL_COMPLETE
+                self.level_complete_timer = 0.0  # Reset timer
                 self._play_sfx("coin")  # Victory sound
                 self.sound.stop_bgm()
                 
@@ -367,6 +437,51 @@ class GameEngine:
                     count=30,
                     color=QColor(255, 215, 0)
                 )
+                
+    def _check_bomber_explosions(self):
+        """Check and handle bomber enemy explosions."""
+        from game.enemy import BomberEnemy
+        
+        if not self.level_manager.player:
+            return
+            
+        player = self.level_manager.player
+        
+        for enemy in self.level_manager.enemies[:]:
+            if isinstance(enemy, BomberEnemy) and enemy.should_explode():
+                # Bomber exploded!
+                explosion_x = enemy.x + enemy.width / 2
+                explosion_y = enemy.y + enemy.height / 2
+                
+                # Big explosion particles
+                self.particles.emit_burst(
+                    explosion_x, explosion_y,
+                    count=40,
+                    color=QColor(255, 100, 0),
+                    speed_range=(100, 300)
+                )
+                
+                # Check if player is in explosion range
+                distance = math.sqrt(
+                    (player.x - enemy.x) ** 2 + 
+                    (player.y - enemy.y) ** 2
+                )
+                
+                if distance < enemy.get_explosion_radius():
+                    # Player hit by explosion!
+                    player.take_damage(2)  # Heavy damage
+                    self._play_sfx("hit")
+                    
+                    # Damage particles
+                    self.particles.emit_damage_effect(
+                        player.x + player.width/2,
+                        player.y + player.height/2
+                    )
+                
+                # Remove bomber
+                self.level_manager.enemies.remove(enemy)
+                self._play_sfx("death")
+                self.score += 75  # Bonus for triggering explosion
                 
     def _check_game_state(self):
         """Check for game over conditions."""
@@ -446,6 +561,9 @@ class GameEngine:
         
         # Clear particles
         self.particles.clear()
+        
+        # Reset level complete timer
+        self.level_complete_timer = 0.0
         
         # Load the next level
         self.level_manager.load_level(self.current_level)
@@ -540,6 +658,19 @@ class GameEngine:
         # Auto-save on exit
         if self.state == GameState.RUNNING:
             self.save_game()
+    
+    def show_quit_confirm(self):
+        """Show quit confirmation dialog."""
+        self.quit_from_state = self.state
+        self.state = GameState.QUIT_CONFIRM
+        print("❓ Quit confirmation shown")
+    
+    def quit_game(self):
+        """Quit the game (close window)."""
+        print("👋 Quitting game...")
+        self.shutdown()
+        # Close the window
+        self.widget.window().close()
             
     def _play_sfx(self, name: str):
         """Play sound effect."""
