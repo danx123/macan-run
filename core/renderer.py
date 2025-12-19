@@ -1,22 +1,21 @@
 """
-Renderer - All rendering via QPainter
-OPTIMIZED: Better culling, caching, and performance
-Uses view frustum culling and only renders visible objects
+Renderer - Uses image assets for background and scenery.
+OPTIMIZED: Uses integer coordinates and view frustum culling.
 """
-from PySide6.QtGui import QPainter, QColor, QLinearGradient, QBrush, QPen, QPixmap, QFont, QPolygonF, QRadialGradient
-from PySide6.QtCore import QRect, QRectF, Qt, QSize, QPointF
-import math
+from PySide6.QtGui import QPainter, QColor, QLinearGradient, QBrush, QPen, QPixmap, QFont
+from PySide6.QtCore import QRect, Qt, QSize
 import random
-
+# IMPORT ASSET MANAGER
+from core.asset_manager import assets
 
 class Renderer:
-    """Handles all game rendering using QPainter with optimizations."""
+    """Handles all game rendering using QPainter and Image Assets."""
     
     def __init__(self, size: QSize):
         self.size = size
         
-        # Cached backgrounds
-        self.bg_cache = None
+        # Cached background composite layer
+        self.bg_composite_cache = None
         self.bg_size = None
         
         # Fonts (cached)
@@ -25,230 +24,140 @@ class Renderer:
         self.ui_font = QFont("Sans Serif", 18)
         self.small_font = QFont("Sans Serif", 16)
         
-        # Tree and grass positions (procedurally generated, cached)
+        # Pre-load essential assets
+        assets.get("bg_sky.png")
+        assets.get("bg_mountains.png")
+        assets.get("prop_tree.png")
+        assets.get("prop_cloud1.png")
+        assets.get("prop_cloud2.png")
+        assets.get("prop_grass_tuft.png")
+        
+        # Scenery positions (procedurally generated, cached)
         self.trees = []
+        self.clouds = []
         self.grass_patches = []
         
-        # Performance: Render hints cache
-        self.render_hints_set = False
+        self._generate_scenery_positions()
         
-        self._generate_background_cache()
+    def _generate_scenery_positions(self):
+        """Generate fixed positions for scenery elements."""
+        random.seed(42)  # Fixed seed for consistency
         
-    def _generate_background_cache(self):
-        """Generate cached background layers with trees and grass."""
-        # Create pixmap for background
-        self.bg_cache = QPixmap(self.size)
+        # Trees (Background layer)
+        self.trees = []
+        for i in range(8):
+            x = (i * 250 + random.randint(50, 150)) % (self.size.width() * 1.5)
+            # Posisi Y agak random di dekat garis cakrawala
+            y = self.size.height() - random.randint(280, 350)
+            scale = random.uniform(0.8, 1.2)
+            self.trees.append((x, y, scale))
+            
+        # Clouds
+        self.clouds = []
+        for i in range(6):
+            x = (i * 300 + random.randint(0, 100)) % (self.size.width() * 2)
+            y = random.randint(50, 200)
+            asset_name = random.choice(["prop_cloud1.png", "prop_cloud2.png"])
+            self.clouds.append((x, y, asset_name))
+
+        # Foreground Grass Patches positions generated in render loop based on camera
+            
+    def _generate_background_composite(self):
+        """
+        Composites sky, mountains, and distant trees into a single layer.
+        This layer will scroll slowly (parallax).
+        """
+        # Kita buat cache background sedikit lebih lebar dari layar untuk scrolling mulus
+        cache_width = int(self.size.width() * 1.5)
+        self.bg_composite_cache = QPixmap(cache_width, self.size.height())
         self.bg_size = self.size
         
-        painter = QPainter(self.bg_cache)
+        painter = QPainter(self.bg_composite_cache)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         
-        # Sky gradient
-        gradient = QLinearGradient(0, 0, 0, self.size.height())
-        gradient.setColorAt(0.0, QColor(135, 206, 235))  # Sky blue
-        gradient.setColorAt(0.7, QColor(255, 200, 150))  # Horizon orange
-        gradient.setColorAt(1.0, QColor(255, 160, 100))  # Ground level
+        # 1. Draw Sky (stretched to fit)
+        sky_pix = assets.get("bg_sky.png")
+        painter.drawPixmap(QRect(0, 0, cache_width, self.size.height()), sky_pix)
         
-        painter.fillRect(0, 0, self.size.width(), self.size.height(), QBrush(gradient))
+        # 2. Draw Mountains (at the bottom portion, stretched horizontally)
+        mount_pix = assets.get("bg_mountains.png")
+        mount_h = mount_pix.height()
+        # Gambar gunung di bagian bawah, sedikit overlap ke bawah layar
+        painter.drawPixmap(QRect(0, self.size.height() - mount_h + 100, cache_width, mount_h), mount_pix)
         
-        # Generate tree positions (random but consistent)
-        random.seed(42)  # Fixed seed for consistency
-        self.trees = []
-        for i in range(8):
-            x = (i * 180 + random.randint(30, 100)) % self.size.width()
-            y = self.size.height() - random.randint(250, 350)
-            size = random.uniform(0.8, 1.2)
-            self.trees.append((x, y, size))
+        # 3. Draw Clouds (Fixed in background layer)
+        for x, y, name in self.clouds:
+            pix = assets.get(name)
+            painter.drawPixmap(int(x), int(y), pix)
+            
+        # 4. Draw Background Trees
+        tree_pix = assets.get("prop_tree.png")
+        orig_w = tree_pix.width()
+        orig_h = tree_pix.height()
         
-        # Generate grass patches
-        self.grass_patches = []
-        for i in range(20):
-            x = (i * 80 + random.randint(0, 40)) % self.size.width()
-            y = self.size.height() - random.randint(50, 150)
-            self.grass_patches.append((x, y))
-        
-        # Draw distant mountains (far background)
-        self._draw_mountains(painter)
-        
-        # Draw clouds (simple circles)
-        cloud_color = QColor(255, 255, 255, 180)
-        painter.setBrush(QBrush(cloud_color))
-        painter.setPen(Qt.PenStyle.NoPen)
-        
-        for i in range(5):
-            x = (i * 250 + 100) % self.size.width()
-            y = 50 + (i * 30) % 100
-            painter.drawEllipse(x, y, 80, 40)
-            painter.drawEllipse(x + 30, y - 10, 60, 35)
-            painter.drawEllipse(x + 50, y, 70, 38)
-        
-        # Draw trees in background
-        for x, y, size in self.trees:
-            self._draw_tree(painter, x, y, size)
-        
-        # Draw grass patches
-        for x, y in self.grass_patches:
-            self._draw_grass_patch(painter, x, y)
+        for x, y, scale in self.trees:
+            w = int(orig_w * scale)
+            h = int(orig_h * scale)
+            # Gambar pohon dengan anchor point di bawah-tengah
+            painter.drawPixmap(QRect(int(x - w/2), int(y), w, h), tree_pix)
             
         painter.end()
-    
-    def _draw_mountains(self, painter: QPainter):
-        """Draw distant mountain silhouettes."""
-        painter.save()
-        
-        # Far mountains (lighter, more distant)
-        mountain_color = QColor(100, 120, 140, 150)
-        painter.setBrush(QBrush(mountain_color))
-        painter.setPen(Qt.PenStyle.NoPen)
-        
-        # Mountain 1
-        mountain1 = QPolygonF([
-            QPointF(0, self.size.height() * 0.6),
-            QPointF(200, self.size.height() * 0.4),
-            QPointF(400, self.size.height() * 0.6)
-        ])
-        painter.drawPolygon(mountain1)
-        
-        # Mountain 2
-        mountain2 = QPolygonF([
-            QPointF(300, self.size.height() * 0.65),
-            QPointF(550, self.size.height() * 0.35),
-            QPointF(800, self.size.height() * 0.65)
-        ])
-        painter.drawPolygon(mountain2)
-        
-        # Mountain 3
-        mountain3 = QPolygonF([
-            QPointF(700, self.size.height() * 0.62),
-            QPointF(900, self.size.height() * 0.45),
-            QPointF(self.size.width(), self.size.height() * 0.62)
-        ])
-        painter.drawPolygon(mountain3)
-        
-        painter.restore()
-    
-    def _draw_tree(self, painter: QPainter, x: float, y: float, size: float = 1.0):
-        """Draw a tree with trunk and foliage."""
-        painter.save()
-        
-        # Trunk
-        trunk_width = int(15 * size)
-        trunk_height = int(60 * size)
-        trunk_color = QColor(101, 67, 33)
-        
-        painter.setBrush(QBrush(trunk_color))
-        painter.setPen(QPen(QColor(70, 45, 20), 2))
-        painter.drawRect(
-            int(x - trunk_width/2), 
-            int(y), 
-            trunk_width, 
-            trunk_height
-        )
-        
-        # Tree foliage (3 circles for leafy effect)
-        foliage_color = QColor(34, 139, 34)  # Forest green
-        painter.setBrush(QBrush(foliage_color))
-        painter.setPen(QPen(QColor(20, 100, 20), 2))
-        
-        # Bottom layer
-        radius1 = int(40 * size)
-        painter.drawEllipse(
-            int(x - radius1), 
-            int(y - 20 * size), 
-            radius1 * 2, 
-            radius1 * 2
-        )
-        
-        # Middle layer
-        radius2 = int(35 * size)
-        painter.drawEllipse(
-            int(x - radius2), 
-            int(y - 45 * size), 
-            radius2 * 2, 
-            radius2 * 2
-        )
-        
-        # Top layer
-        radius3 = int(28 * size)
-        painter.drawEllipse(
-            int(x - radius3), 
-            int(y - 65 * size), 
-            radius3 * 2, 
-            radius3 * 2
-        )
-        
-        painter.restore()
-    
-    def _draw_grass_patch(self, painter: QPainter, x: float, y: float):
-        """Draw a patch of grass blades."""
-        painter.save()
-        
-        grass_colors = [
-            QColor(50, 200, 50),
-            QColor(60, 180, 60),
-            QColor(40, 220, 40)
-        ]
-        
-        painter.setPen(Qt.PenStyle.NoPen)
-        
-        # Draw multiple grass blades
-        for i in range(8):
-            offset_x = (i - 4) * 5
-            blade_height = random.randint(15, 25)
-            color = random.choice(grass_colors)
-            color.setAlpha(200)
-            
-            painter.setBrush(QBrush(color))
-            
-            # Grass blade (thin triangle)
-            blade = QPolygonF([
-                QPointF(x + offset_x, y),
-                QPointF(x + offset_x - 2, y - blade_height),
-                QPointF(x + offset_x + 2, y - blade_height)
-            ])
-            painter.drawPolygon(blade)
-        
-        painter.restore()
         
     def render_background(self, painter: QPainter, camera_x: float):
-        """Render scrolling background with parallax."""
-        if not self.bg_cache or self.bg_size != self.size:
-            self._generate_background_cache()
+        """Render composite background with parallax scrolling."""
+        if not self.bg_composite_cache or self.bg_size != self.size:
+            self._generate_background_composite()
             
-        # Parallax effect - background scrolls slower
-        offset = int(camera_x * 0.3) % self.size.width()
+        cache_w = self.bg_composite_cache.width()
         
-        # Draw background twice for seamless scrolling
-        painter.drawPixmap(-offset, 0, self.bg_cache)
-        painter.drawPixmap(self.size.width() - offset, 0, self.bg_cache)
+        # Parallax effect: scroll 30% speed of camera
+        # Use int() for precision
+        scroll_x = int(camera_x * 0.3) % cache_w
+        
+        # Draw twice for seamless looping
+        painter.drawPixmap(-scroll_x, 0, self.bg_composite_cache)
+        painter.drawPixmap(cache_w - scroll_x, 0, self.bg_composite_cache)
         
     def render_foreground_grass(self, painter: QPainter, camera_x: float, level_width: int):
-        """Render foreground grass that scrolls with the level (parallax layer)."""
+        """Render foreground grass tufts using assets."""
         painter.save()
+        pixmap = assets.get("prop_grass_tuft.png")
+        if not pixmap:
+            painter.restore()
+            return
+
+        random.seed(99) # Consistent seed
         
-        # Generate consistent grass positions based on level
-        random.seed(99)  # Different seed for foreground
+        ground_y = self.size.height() - 55 # Tepat di atas tile tanah
         
-        # Draw grass along the ground level
-        ground_y = self.size.height() - 100
+        # Optimization: Only loop through visible range
+        start_index = int(camera_x // 60)
+        end_index = int((camera_x + self.size.width()) // 60) + 2
         
-        for i in range(0, level_width // 50):
-            x = i * 50 + random.randint(-10, 10)
-            screen_x = x - camera_x
+        for i in range(start_index, end_index):
+            # Jarak antar rumput sekitar 60px dengan variasi acak
+            world_x = i * 60 + random.randint(-20, 20)
             
-            # Only draw if on screen
-            if -50 < screen_x < self.size.width() + 50:
-                self._draw_grass_patch(painter, screen_x, ground_y)
+            # Use int() for screen coordinate
+            screen_x = int(world_x - camera_x)
+            
+            # Gambar dengan sedikit variasi ukuran
+            scale = random.uniform(0.9, 1.1)
+            w = int(pixmap.width() * scale)
+            h = int(pixmap.height() * scale)
+            
+            # Anchor point di bawah-tengah
+            painter.drawPixmap(QRect(screen_x - w//2, ground_y - h + 10, w, h), pixmap)
         
         painter.restore()
         
     def render_menu(self, painter: QPainter, size: QSize, has_save: bool = False):
-        """Render main menu screen with save/load option."""
-        # Background
-        gradient = QLinearGradient(0, 0, 0, size.height())
-        gradient.setColorAt(0.0, QColor(40, 40, 80))
-        gradient.setColorAt(1.0, QColor(20, 20, 40))
-        painter.fillRect(0, 0, size.width(), size.height(), QBrush(gradient))
-        
+        """Render main menu screen."""
+        # Background: Use the sky asset slightly darkened
+        sky_pix = assets.get("bg_sky.png")
+        painter.drawPixmap(QRect(0, 0, size.width(), size.height()), sky_pix)
+        painter.fillRect(0,0, size.width(), size.height(), QColor(0,0,0,100)) # Dark overlay
+
         # Title
         painter.setPen(QColor(255, 215, 0))  # Gold
         painter.setFont(self.title_font)
@@ -334,8 +243,8 @@ class Renderer:
         painter.drawText(score_rect, Qt.AlignmentFlag.AlignCenter, f"Score: {score}")
         
     def render_level_complete(self, painter: QPainter, size: QSize, score: int, countdown: float = 0.0):
-        """Render level complete screen with auto-advance countdown."""
-        # Gradient background
+        """Render level complete screen."""
+        # Gradient background (keep gradient for victory screen as it's simple)
         gradient = QLinearGradient(0, 0, 0, size.height())
         gradient.setColorAt(0.0, QColor(50, 150, 50))
         gradient.setColorAt(1.0, QColor(20, 80, 20))
@@ -360,7 +269,7 @@ class Renderer:
         countdown_rect = QRect(0, size.height() // 2 + 60, size.width(), 30)
         painter.drawText(countdown_rect, Qt.AlignmentFlag.AlignCenter, countdown_text)
         
-        # Continue hint (optional skip)
+        # Continue hint
         painter.setFont(self.small_font)
         painter.setPen(QColor(180, 180, 180))
         hint_rect = QRect(0, size.height() // 2 + 100, size.width(), 30)
@@ -377,16 +286,12 @@ class Renderer:
         box_x = (size.width() - box_width) // 2
         box_y = (size.height() - box_height) // 2
         
-        # Box background with gradient
-        gradient = QLinearGradient(box_x, box_y, box_x, box_y + box_height)
-        gradient.setColorAt(0.0, QColor(60, 60, 80))
-        gradient.setColorAt(1.0, QColor(40, 40, 60))
-        
-        painter.setBrush(QBrush(gradient))
+        # Box background
+        painter.setBrush(QBrush(QColor(60, 60, 80)))
         painter.setPen(QPen(QColor(255, 100, 100), 3))
         painter.drawRoundedRect(box_x, box_y, box_width, box_height, 15, 15)
         
-        # Warning icon (!)
+        # Warning icon
         painter.setPen(QColor(255, 100, 100))
         painter.setFont(QFont("Sans Serif", 48, QFont.Weight.Bold))
         icon_rect = QRect(box_x, box_y + 20, box_width, 60)
@@ -407,7 +312,7 @@ class Renderer:
         # Buttons
         painter.setFont(QFont("Sans Serif", 20, QFont.Weight.Bold))
         
-        # Yes button (red)
+        # Yes button
         painter.setPen(QColor(255, 255, 255))
         painter.setBrush(QBrush(QColor(200, 50, 50)))
         yes_btn_x = box_x + 80
@@ -417,7 +322,7 @@ class Renderer:
         yes_text_rect = QRect(yes_btn_x, yes_btn_y, 140, 50)
         painter.drawText(yes_text_rect, Qt.AlignmentFlag.AlignCenter, "YES (Y)")
         
-        # No button (green)
+        # No button
         painter.setBrush(QBrush(QColor(50, 150, 50)))
         no_btn_x = box_x + 280
         no_btn_y = box_y + 180
@@ -429,4 +334,5 @@ class Renderer:
     def on_resize(self, size: QSize):
         """Handle renderer resize."""
         self.size = size
-        self._generate_background_cache()
+        # Regenerate background composite on resize
+        self._generate_background_composite()
