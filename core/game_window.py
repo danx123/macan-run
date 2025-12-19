@@ -1,36 +1,63 @@
 """
 Game window and main widget setup
-ENHANCED: Fullscreen support + optimized rendering
+OPTIMIZED: Using QOpenGLWidget for Hardware Acceleration (GPU)
 """
 import os
+os.environ["QT_OPENGL"] = "desktop" 
 import sys
-from PySide6.QtWidgets import QMainWindow, QWidget
-from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QPalette, QColor, QIcon
+from PySide6.QtWidgets import QMainWindow
+# Change: Import QOpenGLWidget instead of QWidget
+from PySide6.QtOpenGLWidgets import QOpenGLWidget
+from PySide6.QtCore import Qt, QSize, QTimer
+from PySide6.QtGui import QPalette, QColor, QIcon, QSurfaceFormat
 from core.engine import GameEngine
 
 
-class GameWidget(QWidget):
-    """Central widget that hosts the game engine and handles rendering."""
+class GameWidget(QOpenGLWidget):
+    """
+    Central widget that hosts the game engine.
+    Inherits from QOpenGLWidget to enable GPU hardware acceleration.
+    """
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumSize(QSize(1024, 768))        
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         
-        # Enable optimizations
-        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)  # No background clearing
-        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)  # Custom background
-        
-        # Initialize game engine (but don't start yet - show menu)
+        # Initialize game engine
         self.engine = GameEngine(self)
         
-        # Start timer for menu rendering
-        self.engine.timer.start(self.engine.frame_time)
+        # Setup Render Loop
+        # We use a timer to trigger updates, but QOpenGLWidget handles the vsync
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_game)
+        # 16ms ~ 60 FPS
+        self.timer.start(16)
         
-    def paintEvent(self, event):
-        """Render game via engine - optimized."""
-        self.engine.render(event)
+    def initializeGL(self):
+        """Called once before the first call to paintGL() or resizeGL()."""
+        # OpenGL initialization code can go here
+        # For QPainter over OpenGL, we often don't need raw GL setup
+        pass
+
+    def resizeGL(self, w, h):
+        """Called whenever the widget has been resized."""
+        self.engine.on_resize(QSize(w, h))
+
+    def paintGL(self):
+        """
+        Renders the OpenGL scene. 
+        Replaces paintEvent for rendering, though paintEvent calls this internally.
+        """
+        # We pass 'None' as event because engine.render expects an event 
+        # but doesn't strictly use it for rendering logic.
+        self.engine.render(None)
+        
+    def update_game(self):
+        """Tick the game logic and request a repaint."""
+        self.engine.tick()
+        # update() schedules a paintGL call
+        self.update()
         
     def keyPressEvent(self, event):
         """Forward key press to engine."""
@@ -44,11 +71,6 @@ class GameWidget(QWidget):
     def keyReleaseEvent(self, event):
         """Forward key release to engine."""
         self.engine.on_key_release(event)
-        
-    def resizeEvent(self, event):
-        """Handle widget resize."""
-        super().resizeEvent(event)
-        self.engine.on_resize(event.size())
 
 
 class GameWindow(QMainWindow):
@@ -56,7 +78,7 @@ class GameWindow(QMainWindow):
     
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Macan Run - Neo Edition")
+        self.setWindowTitle("Macan Run - Neo Edition (OpenGL)")
         self.resize(1024, 768)
         
         # Icon
@@ -73,7 +95,7 @@ class GameWindow(QMainWindow):
         self.is_fullscreen = False
         self.normal_geometry = None
         
-        # Create and set central widget
+        # Create and set central widget (The OpenGL Widget)
         self.game_widget = GameWidget(self)
         self.setCentralWidget(self.game_widget)
         
