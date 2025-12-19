@@ -1,42 +1,116 @@
 """
-TileMap - ASCII map rendering and tile management
-Tiles drawn via QPainter with no image files
-Updated to skip all entity markers including power-ups
-FIXED: Properly skip G (Goal/Finish) marker
+TileMap - Optimized with Chunk Caching and Image Assets.
+Renders map segments into images using PNG assets.
 """
-from typing import List
-from PySide6.QtGui import QPainter, QColor, QBrush, QPen, QLinearGradient
-from PySide6.QtCore import QRectF, Qt
-
+from typing import List, Dict
+from PySide6.QtGui import QPainter, QPixmap
+from PySide6.QtCore import Qt, QRect
+# IMPORT ASSET MANAGER SEBAGAI 'assets'
+from core.asset_manager import assets
 
 class TileMap:
-    """Tile map loaded from ASCII grid."""
+    """Tile map loaded from ASCII grid with Chunk Caching optimization."""
     
+    # Base tile size from original code
     def __init__(self, tile_size: int = 48):
         self.tile_size = tile_size
         self.tiles: List[List[str]] = []
         self.width = 0
         self.height = 0
         
-        # Tile colors
-        self.tile_colors = {
-            '#': QColor(101, 67, 33),   # Ground - brown
-            '=': QColor(80, 80, 80),     # Platform - gray
-            '|': QColor(100, 50, 0),     # Wall - dark brown
-        }
+        # CHUNK SYSTEM OPTIMIZATION
+        # Split map into segments of N columns width
+        self.chunk_width_tiles = 20  # 20 tiles * 48px = 960px width per chunk
+        self.chunks: Dict[int, QPixmap] = {}
         
     def load_from_string(self, map_data: str):
-        """Load tilemap from ASCII string."""
+        """Load tilemap and pre-render chunks immediately."""
         lines = map_data.strip().split('\n')
         self.tiles = [list(line) for line in lines]
         self.height = len(self.tiles)
         self.width = max(len(row) for row in self.tiles) if self.tiles else 0
         
-        # Pad rows to same width
+        # Pad rows
         for row in self.tiles:
             while len(row) < self.width:
                 row.append('.')
+        
+        # Generate cache images immediately to prevent lag during gameplay
+        self._generate_all_chunks()
+        
+    def _generate_all_chunks(self):
+        """Pre-render the entire map into chunks using assets."""
+        self.chunks.clear()
+        # Pastikan aset dasar termuat
+        assets.get("tile_grass.png")
+        assets.get("tile_platform.png")
+        assets.get("tile_wall.png")
+        assets.get("trap_spike.png")
+        
+        total_chunks = (self.width // self.chunk_width_tiles) + 1
+        print(f"🔄 Pre-rendering map into {total_chunks} chunks using assets...")
+        
+        for i in range(total_chunks):
+            self._render_single_chunk(i)
+            
+    def _render_single_chunk(self, chunk_index: int):
+        """Render a specific segment of the map into a QPixmap."""
+        # Calculate dimensions
+        chunk_pixel_width = self.chunk_width_tiles * self.tile_size
+        chunk_pixel_height = self.height * self.tile_size
+        
+        # Create transparent pixmap
+        chunk_pixmap = QPixmap(chunk_pixel_width, chunk_pixel_height)
+        chunk_pixmap.fill(Qt.GlobalColor.transparent)
+        
+        painter = QPainter(chunk_pixmap)
+        # Use high quality for the cached image, though less critical with pre-made assets
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False) 
+        
+        start_col = chunk_index * self.chunk_width_tiles
+        end_col = min(start_col + self.chunk_width_tiles, self.width)
+        
+        # Draw tiles onto the pixmap relative to (0,0) of this chunk
+        for row in range(self.height):
+            for col in range(start_col, end_col):
+                tile = self.get_tile(col, row)
                 
+                # Skip air and markers that are entities
+                if tile == '.' or tile == ' ' or tile in ['P', 'E', 'F', 'C', 'G', 'S', 'H', 'J', 'D', 'K', 'B', 'T']:
+                    continue
+                
+                # Calculate x position relative to the chunk
+                rel_x = (col - start_col) * self.tile_size
+                rel_y = row * self.tile_size
+                
+                self._draw_tile_asset(painter, tile, rel_x, rel_y)
+                
+        painter.end()
+        self.chunks[chunk_index] = chunk_pixmap
+        
+    def _draw_tile_asset(self, painter: QPainter, tile: str, x: int, y: int):
+        """Helper to draw the correct asset for a tile."""
+        pixmap = None
+        
+        if tile == '#':
+            # Untuk saat ini, kita gunakan tile_grass untuk semua tanah
+            pixmap = assets.get("tile_grass.png")
+            
+        elif tile == '=':
+            pixmap = assets.get("tile_platform.png")
+            
+        elif tile == '|':
+            pixmap = assets.get("tile_wall.png")
+            
+        elif tile == '^':
+             pixmap = assets.get("trap_spike.png")
+
+        # Draw the asset if found
+        if pixmap:
+            # Pastikan menggambar dengan ukuran tile yang benar jika resolusi aset berbeda
+            target_rect = QRect(x, y, self.tile_size, self.tile_size)
+            painter.drawPixmap(target_rect, pixmap)
+
     def get_tile(self, col: int, row: int) -> str:
         """Get tile at grid position."""
         if 0 <= row < self.height and 0 <= col < len(self.tiles[row]):
@@ -44,81 +118,23 @@ class TileMap:
         return '.'
         
     def render(self, painter: QPainter, camera_x: float, camera_y: float, screen_width: int):
-        """Render visible tiles."""
-        # Calculate visible tile range
-        start_col = max(0, int(camera_x / self.tile_size) - 1)
-        end_col = min(self.width, int((camera_x + screen_width) / self.tile_size) + 2)
+        """
+        Render visible chunks.
+        Replacing thousands of draws with 2-3 image draws.
+        """
+        chunk_pixel_width = self.chunk_width_tiles * self.tile_size
         
-        # Render tiles row by row for better batching
-        for row in range(self.height):
-            for col in range(start_col, end_col):
-                tile = self.get_tile(col, row)
-                
-                if tile == '.' or tile == ' ':
-                    continue
-                    
-                # Skip ALL entity markers (rendered separately by LevelManager)
-                # P=Player, E=Enemy, F=Flying Enemy, C=Coin, ^=Spike
-                # G=Goal/Finish, S=Speed, H=Health, J=Jump, D=Shield
-                if tile in ['P', 'E', 'F', 'C', '^', 'G', 'S', 'H', 'J', 'D']:
-                    continue
-                    
-                screen_x = col * self.tile_size - camera_x
-                screen_y = row * self.tile_size - camera_y
-                
-                self._render_tile(painter, tile, screen_x, screen_y)
-                
-    def _render_tile(self, painter: QPainter, tile: str, x: float, y: float):
-        """Render a single tile."""
-        ts = self.tile_size
+        # Calculate which chunks are visible
+        start_chunk = int(camera_x // chunk_pixel_width)
+        end_chunk = int((camera_x + screen_width) // chunk_pixel_width) + 1
         
-        if tile == '#':
-            # Ground block with gradient
-            gradient = QLinearGradient(x, y, x, y + ts)
-            gradient.setColorAt(0.0, QColor(120, 80, 40))
-            gradient.setColorAt(1.0, QColor(80, 50, 20))
-            
-            painter.setBrush(QBrush(gradient))
-            painter.setPen(QPen(QColor(60, 40, 20), 2))
-            painter.drawRect(x, y, ts, ts)
-            
-            # Grass on top
-            grass_color = QColor(50, 150, 50)
-            painter.setBrush(QBrush(grass_color))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawRect(x, y, ts, 6)
-            
-            # Texture details
-            painter.setPen(QPen(QColor(60, 40, 20), 1))
-            for i in range(3):
-                offset = i * 16
-                painter.drawLine(x + offset, y + 10, x + offset + 8, y + ts)
+        for i in range(start_chunk, end_chunk + 1):
+            if i in self.chunks:
+                # Calculate where to draw this chunk on screen
+                # Use int() for precise pixel positioning to prevent jitter
+                chunk_x = int((i * chunk_pixel_width) - camera_x)
+                chunk_y = -int(camera_y)
                 
-        elif tile == '=':
-            # Platform (semi-transparent)
-            platform_color = QColor(100, 100, 100, 200)
-            painter.setBrush(QBrush(platform_color))
-            painter.setPen(QPen(QColor(70, 70, 70), 2))
-            painter.drawRect(x, y, ts, 12)
-            
-            # Support beams
-            painter.drawRect(x + 4, y + 12, 4, ts - 12)
-            painter.drawRect(x + ts - 8, y + 12, 4, ts - 12)
-            
-        elif tile == '|':
-            # Wall
-            gradient = QLinearGradient(x, y, x + ts, y)
-            gradient.setColorAt(0.0, QColor(130, 70, 30))
-            gradient.setColorAt(0.5, QColor(110, 60, 25))
-            gradient.setColorAt(1.0, QColor(90, 50, 20))
-            
-            painter.setBrush(QBrush(gradient))
-            painter.setPen(QPen(QColor(70, 40, 15), 2))
-            painter.drawRect(x, y, ts, ts)
-            
-            # Brick pattern
-            painter.setPen(QPen(QColor(50, 30, 10), 1))
-            painter.drawLine(x, y + ts/2, x + ts, y + ts/2)
-            painter.drawLine(x + ts/2, y, x + ts/2, y + ts/2)
-            painter.drawLine(x + ts/4, y + ts/2, x + ts/4, y + ts)
-            painter.drawLine(x + ts*3/4, y + ts/2, x + ts*3/4, y + ts)
+                # Only draw if within reasonable bounds (optimization)
+                if chunk_x + chunk_pixel_width > -50 and chunk_x < screen_width + 50:
+                    painter.drawPixmap(chunk_x, chunk_y, self.chunks[i])
