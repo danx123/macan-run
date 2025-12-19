@@ -6,7 +6,7 @@ A professional 2D platformer game built with Python and PySide6, featuring manua
 
 ## Features
 
-- **Pure QPainter Rendering**: All graphics drawn by code - no image files needed
+- **Pure QPainter Rendering**: All graphics Player, Coin, Powerups, Enemy drawn by code - no image files needed
 - **Physics Engine**: Custom gravity, velocity integration, and AABB collision detection
 - **Double Jump Mechanic**: Jump twice in the air for advanced movement
 - **Smooth Camera**: Lerp-based camera following the player
@@ -24,8 +24,11 @@ A professional 2D platformer game built with Python and PySide6, featuring manua
 | **ESC** | Pause or return to menu |
 
 ## Screenshot
-<img width="1365" height="767" alt="Screenshot 2025-12-15 102355" src="https://github.com/user-attachments/assets/7bc40501-f562-4a14-bc43-b146747d5071" />
-<img width="1365" height="767" alt="Screenshot 2025-12-15 102421" src="https://github.com/user-attachments/assets/c83b221b-9893-4129-be0b-00babed5a550" />
+<img width="1365" height="767" alt="Screenshot 2025-12-19 202237" src="https://github.com/user-attachments/assets/9636dae0-13d2-42f8-ba3e-2f4deccc7588" />
+<img width="1365" height="767" alt="Screenshot 2025-12-19 202537" src="https://github.com/user-attachments/assets/f5e0c8ec-9c44-40d4-8f03-d9cd8f67d216" />
+
+
+
 
 
 
@@ -70,6 +73,7 @@ The game window will appear and you can start playing immediately by pressing **
 macan-run/
 ├── main.py                 # Entry point
 ├── core/
+|   ├── asset_manager.py    # Manage Asset
 |   ├── create_all_level.py # Create level automatically
 │   ├── game_window.py      # Main window and widget
 │   ├── engine.py           # Game engine and loop
