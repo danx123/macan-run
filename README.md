@@ -2,7 +2,7 @@
 
 A professional 2D platformer game built with Python and PySide6, featuring manual-coded UI, QPainter rendering, and physics-based gameplay.
 
-© 2025 Macan Angkasa
+© 2026 Macan Angkasa
 
 ## Features
 
@@ -251,11 +251,11 @@ See `assets/README.txt` for detailed specifications.
 
 Developed by: Macan Angkasa  
 Engine: Python 3.11+ with PySide6  
-License: © 2025 Macan Angkasa
+License: © 2026 Macan Angkasa
 
 ## License
 
-© 2025 Macan Angkasa. All rights reserved.
+© 2026 Macan Angkasa. All rights reserved.
 
 This game is provided as-is for educational and entertainment purposes.
 
