@@ -3,6 +3,8 @@ Game Engine - Main loop and game state management
 FIXED: Auto-advance to next level after 2 seconds
 UPDATED: Support for new enemy types with special behaviors
 """
+import os
+os.environ["QT_OPENGL"] = "desktop"
 import time
 import math
 from enum import Enum
@@ -119,7 +121,12 @@ class GameEngine:
         # Clamp delta time to prevent spiral of death
         if self.delta_time > 0.1:
             self.delta_time = 0.1
-            
+
+        # Poll non-keyboard input sources (Xbox controller via XInput).
+        # MUST run before _handle_input()/player update, otherwise
+        # gamepad state is always one frame stale (or never read at all).
+        self.input.update()
+
         # Handle input regardless of state
         self._handle_input()
             
