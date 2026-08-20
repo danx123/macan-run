@@ -1,0 +1,20 @@
+[package]
+name = "macan_physics_native"
+version = "0.1.0"
+edition = "2021"
+description = "Native Rust hot-path for MacanAngkasa: player physics integration, tile AABB collision resolution, and batch particle updates."
+license = "MIT"
+
+[lib]
+name = "macan_physics_native"
+# cdylib -> compiled as a Python extension module (.pyd on Windows)
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module"] }
+
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1
+panic = "abort"
