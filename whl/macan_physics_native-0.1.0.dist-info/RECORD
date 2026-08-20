@@ -1,0 +1,6 @@
+macan_physics_native/__init__.py,sha256=f2itvlp4l-gOVs8xdGBc-A8EGs22lOHOqeqtDpfc9zo,163
+macan_physics_native/macan_physics_native.cp313-win_amd64.pyd,sha256=oTLHcftummNe1qczBXv1_V4HymaA-ViEuh6a-0sOUGg,159232
+macan_physics_native-0.1.0.dist-info/METADATA,sha256=aJ3sderFLgpdP9VbxGBjqCBkYTJNaysAKAo7BP_FWxA,213
+macan_physics_native-0.1.0.dist-info/WHEEL,sha256=z3sDn4xNPtieBDo9mUKkT1e80gbhCuRsQQi1_g6mdQM,97
+macan_physics_native-0.1.0.dist-info/sboms/macan_physics_native.cyclonedx.json,sha256=lj6HtKpWnz5yxhNUccJVW_cVTFyDZJFvVeVDyHN33qU,23677
+macan_physics_native-0.1.0.dist-info/RECORD,,

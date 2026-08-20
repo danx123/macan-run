@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: macan_physics_native
+Version: 0.1.0
+Summary: Native Rust hot-path for MacanAngkasa: player physics integration, tile AABB collision resolution, and batch particle updates.
+License: MIT
