@@ -1,12 +1,26 @@
 """
 Particle System - Visual effects with particles
 OPTIMIZED: Better culling and batch rendering
+
+MIGRATED: Per-frame particle physics (gravity, integration, size/age
+decay) now runs as a single batched call into the macan_physics_native
+Rust extension instead of one Python method call per particle, falling
+back to the original per-particle Python update if the extension isn't
+installed yet.
 """
 import random
 import math
 from typing import List
 from PySide6.QtGui import QPainter, QColor, QBrush, QPen
 from PySide6.QtCore import Qt
+
+try:
+    import macan_physics_native as _native
+    _NATIVE_PHYSICS = True
+    print("using macan physics native")
+except ImportError:
+    _native = None
+    _NATIVE_PHYSICS = False
 
 
 class Particle:
@@ -26,7 +40,7 @@ class Particle:
         self.initial_size = size
         
     def update(self, delta_time: float, gravity: float = 300.0) -> bool:
-        """Update particle physics."""
+        """Update particle physics (pure-Python fallback path)."""
         self.age += delta_time
         
         # Check if expired
@@ -77,6 +91,7 @@ class ParticleSystem:
         """Initialize particle system."""
         self.particles: List[Particle] = []
         self.max_particles = 300  # Reduced from 500 for performance
+        self.gravity = 300.0  # Matches the default used by Particle.update()
         
     def emit_burst(self, x: float, y: float, count: int = 10, 
                    color: QColor = None, speed_range: tuple = (50, 200)):
@@ -210,10 +225,35 @@ class ParticleSystem:
             
     def update(self, delta_time: float):
         """Update all particles, removing dead ones."""
-        self.particles = [
-            p for p in self.particles 
-            if p.update(delta_time)
-        ]
+        if not self.particles:
+            return
+
+        if _NATIVE_PHYSICS:
+            batch_input = [
+                (p.x, p.y, p.vx, p.vy, p.age, p.lifetime, p.initial_size)
+                for p in self.particles
+            ]
+            results = _native.particles_update_batch(batch_input, delta_time, self.gravity)
+
+            alive_particles = []
+            for particle, (new_x, new_y, new_vx, new_vy, new_size, new_age, alive) in zip(
+                self.particles, results
+            ):
+                if alive:
+                    particle.x = new_x
+                    particle.y = new_y
+                    particle.vx = new_vx
+                    particle.vy = new_vy
+                    particle.size = new_size
+                    particle.age = new_age
+                    alive_particles.append(particle)
+
+            self.particles = alive_particles
+        else:
+            self.particles = [
+                p for p in self.particles
+                if p.update(delta_time)
+            ]
         
     def render(self, painter: QPainter, camera_x: float, camera_y: float):
         """Render all active particles with culling."""
