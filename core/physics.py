@@ -1,9 +1,22 @@
 """
 Physics Engine - Gravity, velocity integration, AABB collision
 All physics calculations using basic math (no external physics library)
+
+MIGRATED: Hot path (gravity/friction integration + tile AABB collision
+resolution) now uses the macan_physics_native Rust extension when
+available, falling back to the original pure-Python implementation if
+the compiled .pyd hasn't been built/installed yet.
 """
 import math
 from typing import List, Tuple, Optional
+
+try:
+    import macan_physics_native as _native
+    _NATIVE_PHYSICS = True
+    print("using macan physics native")
+except ImportError:
+    _native = None
+    _NATIVE_PHYSICS = False
 
 
 class PhysicsEngine:
@@ -22,22 +35,32 @@ class PhysicsEngine:
             return
             
         player = level_manager.player
-        
-        # Apply gravity
-        if not player.on_ground:
-            player.vy += self.gravity * delta_time
-            # Clamp to terminal velocity
-            player.vy = min(player.vy, self.max_fall_speed)
-        
-        # Apply air resistance to horizontal movement
-        if not player.on_ground:
-            player.vx *= self.air_resistance
+
+        if _NATIVE_PHYSICS:
+            new_x, new_y, new_vx, new_vy = _native.physics_integrate(
+                player.x, player.y, player.vx, player.vy,
+                player.on_ground, delta_time,
+                self.gravity, self.max_fall_speed,
+                self.ground_friction, self.air_resistance,
+            )
+            player.x, player.y = new_x, new_y
+            player.vx, player.vy = new_vx, new_vy
         else:
-            player.vx *= self.ground_friction
-            
-        # Integrate velocity (Euler integration)
-        player.x += player.vx * delta_time
-        player.y += player.vy * delta_time
+            # Apply gravity
+            if not player.on_ground:
+                player.vy += self.gravity * delta_time
+                # Clamp to terminal velocity
+                player.vy = min(player.vy, self.max_fall_speed)
+
+            # Apply air resistance to horizontal movement
+            if not player.on_ground:
+                player.vx *= self.air_resistance
+            else:
+                player.vx *= self.ground_friction
+
+            # Integrate velocity (Euler integration)
+            player.x += player.vx * delta_time
+            player.y += player.vy * delta_time
         
         # Reset ground state
         player.on_ground = False
@@ -63,28 +86,49 @@ class PhysicsEngine:
         end_col = min(tilemap.width, int(px2 // tile_size) + 2)
         start_row = max(0, int(py1 // tile_size) - 1)
         end_row = min(tilemap.height, int(py2 // tile_size) + 2)
-        
+
+        # Gather candidate solid tiles first - tilemap lookups stay in
+        # Python since the tilemap object lives here, but the actual
+        # AABB resolution math is the hot part and can move to Rust.
+        solid_tiles = []
         for row in range(start_row, end_row):
             for col in range(start_col, end_col):
                 tile = tilemap.get_tile(col, row)
-                
+
                 # Skip empty tiles
                 if tile == '.' or tile == ' ':
                     continue
-                    
+
                 # Skip non-solid tiles
                 if tile in ['C', 'P', 'E', 'F']:
                     continue
-                    
-                # Tile bounding box
+
                 tx1 = col * tile_size
                 ty1 = row * tile_size
-                tx2 = tx1 + tile_size
-                ty2 = ty1 + tile_size
-                
-                # AABB collision check
+                solid_tiles.append((tx1, ty1, tx1 + tile_size, ty1 + tile_size))
+
+        if not solid_tiles:
+            return
+
+        if _NATIVE_PHYSICS:
+            new_x, new_y, new_vx, new_vy, on_ground, jumps = _native.physics_resolve_collisions(
+                player.x, player.y, player.vx, player.vy,
+                player.width, player.height,
+                player.jumps_remaining, player.max_jumps,
+                solid_tiles,
+            )
+            player.x, player.y = new_x, new_y
+            player.vx, player.vy = new_vx, new_vy
+            player.on_ground = on_ground
+            player.jumps_remaining = jumps
+        else:
+            for (tx1, ty1, tx2, ty2) in solid_tiles:
+                px1 = player.x
+                py1 = player.y
+                px2 = player.x + player.width
+                py2 = player.y + player.height
+
                 if self._aabb_intersect(px1, py1, px2, py2, tx1, ty1, tx2, ty2):
-                    # Resolve collision
                     self._resolve_aabb_collision(player, tx1, ty1, tx2, ty2)
                     
     def _aabb_intersect(self, x1: float, y1: float, x2: float, y2: float,
@@ -93,7 +137,12 @@ class PhysicsEngine:
         return (x1 < bx2 and x2 > bx1 and y1 < by2 and y2 > by1)
         
     def _resolve_aabb_collision(self, player, tx1: float, ty1: float, tx2: float, ty2: float):
-        """Resolve AABB collision by pushing player out of tile."""
+        """Resolve AABB collision by pushing player out of tile.
+
+        NOTE: Only used by the pure-Python fallback path. When
+        macan_physics_native is available, this logic runs in Rust via
+        physics_resolve_collisions() instead.
+        """
         # Calculate overlap on each axis
         px1 = player.x
         py1 = player.y
